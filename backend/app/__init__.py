@@ -1,0 +1,2 @@
+"""AI recruiting demo backend."""
+

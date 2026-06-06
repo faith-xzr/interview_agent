@@ -1,0 +1,18 @@
+.venv/
+data/
+frontend/node_modules/
+frontend/dist/
+.superpowers/
+.claude/
+.env
+.pytest_cache/
+.DS_Store
+*.pyc
+__pycache__/
+*.log
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Local assignment brief
+【一面题目】原生 AI 招聘助手 Demo 搭建.pdf
