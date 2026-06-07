@@ -60,7 +60,27 @@ const demoReport = {
       extraction_facts: [
         {
           fact_type: "skill",
+          value: "Python",
+          evidence: "专业技能：Python | FastAPI | SQL",
+          section: "skills",
+          line_start: 12,
+          line_end: 12,
+          confidence: 0.9,
+          extractor: "section_rules"
+        },
+        {
+          fact_type: "skill",
           value: "FastAPI",
+          evidence: "专业技能：Python | FastAPI | SQL",
+          section: "skills",
+          line_start: 12,
+          line_end: 12,
+          confidence: 0.9,
+          extractor: "section_rules"
+        },
+        {
+          fact_type: "skill",
+          value: "SQL",
           evidence: "专业技能：Python | FastAPI | SQL",
           section: "skills",
           line_start: 12,
@@ -219,6 +239,10 @@ describe("App", () => {
     expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
     expect(screen.getByText("简历抽取事实")).toBeInTheDocument();
     expect(screen.getAllByText("required_skill").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "项目经验" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "专业技能" })).toBeInTheDocument();
+    expect(screen.getByText("FastAPI")).toHaveClass("skill-chip");
+    expect(screen.getByText("SQL")).toHaveClass("skill-chip");
     expect(screen.getByText("专业技能：Python | FastAPI | SQL")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "智能匹配打分" }));

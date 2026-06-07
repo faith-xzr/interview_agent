@@ -480,11 +480,11 @@ function CandidateDetail({
 
 function ExtractionProcess({ jdFacts, resumeFacts }: { jdFacts?: ExtractedFact[]; resumeFacts?: ExtractedFact[] }) {
   const visibleJdFacts = (jdFacts ?? []).slice(0, 12);
-  const visibleResumeFacts = prioritizeResumeFacts(resumeFacts ?? []).slice(0, 14);
+  const groupedResumeFacts = groupResumeFacts(resumeFacts ?? []);
   return (
     <div className="extraction-grid">
       <ExtractionColumn title="JD 核心要求" facts={visibleJdFacts} emptyText="暂无 JD 抽取事实" />
-      <ExtractionColumn title="简历抽取事实" facts={visibleResumeFacts} emptyText="暂无简历抽取事实" />
+      <ResumeExtractionColumn groups={groupedResumeFacts} />
     </div>
   );
 }
@@ -506,6 +506,66 @@ function ExtractionColumn({ title, facts, emptyText }: { title: string; facts: E
         <p className="empty-facts">{emptyText}</p>
       )}
     </div>
+  );
+}
+
+interface FactGroup {
+  section: string;
+  facts: ExtractedFact[];
+}
+
+function ResumeExtractionColumn({ groups }: { groups: FactGroup[] }) {
+  const total = groups.reduce((sum, group) => sum + group.facts.length, 0);
+  return (
+    <div className="extraction-column">
+      <div className="extraction-column-header">
+        <strong>简历抽取事实</strong>
+        <span>{total} 项</span>
+      </div>
+      {groups.length ? (
+        <div className="section-fact-list">
+          {groups.map((group) => (
+            <FactSection group={group} key={group.section} />
+          ))}
+        </div>
+      ) : (
+        <p className="empty-facts">暂无简历抽取事实</p>
+      )}
+    </div>
+  );
+}
+
+function FactSection({ group }: { group: FactGroup }) {
+  const skillFacts = group.facts.filter((fact) => fact.fact_type === "skill");
+  const otherFacts = group.facts.filter((fact) => fact.fact_type !== "skill").slice(0, 4);
+  const skillEvidence = skillFacts[0];
+  return (
+    <section className="fact-section">
+      <div className="fact-section-header">
+        <h4>{SECTION_LABELS[group.section] ?? group.section}</h4>
+        <span>{group.facts.length} 项</span>
+      </div>
+      {skillFacts.length ? (
+        <article className="fact-row compact-skill-row">
+          <div className="fact-row-top">
+            <span className="fact-type">skill</span>
+            <span className="fact-confidence">{Math.round(Math.max(...skillFacts.map((fact) => fact.confidence)) * 100)}%</span>
+          </div>
+          <div className="skill-chip-list">
+            {skillFacts.map((fact) => (
+              <span className="skill-chip" key={`${fact.value}-${fact.line_start ?? "line"}`}>
+                {fact.value}
+              </span>
+            ))}
+          </div>
+          {skillEvidence ? <p>{skillEvidence.evidence}</p> : null}
+          {skillEvidence ? <span className="fact-meta">{formatFactMeta(skillEvidence)}</span> : null}
+        </article>
+      ) : null}
+      {otherFacts.map((fact, index) => (
+        <FactRow fact={fact} key={`${fact.fact_type}-${fact.value}-${index}`} />
+      ))}
+    </section>
   );
 }
 
@@ -616,18 +676,49 @@ function statusClass(status: string) {
   return "missing";
 }
 
-function prioritizeResumeFacts(facts: ExtractedFact[]) {
+const SECTION_LABELS: Record<string, string> = {
+  basic: "基本信息",
+  education: "学历背景",
+  experience: "实习/工作经验",
+  projects: "项目经验",
+  skills: "专业技能",
+  summary: "自我评价",
+  certifications: "证书资质",
+  jd: "JD 核心要求"
+};
+
+const SECTION_ORDER = ["basic", "education", "experience", "projects", "skills", "summary", "certifications"];
+
+function groupResumeFacts(facts: ExtractedFact[]): FactGroup[] {
+  const bySection = new Map<string, ExtractedFact[]>();
+  for (const fact of facts) {
+    const section = fact.section || "unknown";
+    bySection.set(section, [...(bySection.get(section) ?? []), fact]);
+  }
+  return [...bySection.entries()]
+    .map(([section, sectionFacts]) => ({ section, facts: sortFactsWithinSection(sectionFacts).slice(0, 6) }))
+    .sort((left, right) => sectionRank(left.section) - sectionRank(right.section));
+}
+
+function sortFactsWithinSection(facts: ExtractedFact[]) {
   const rank: Record<string, number> = {
-    skill: 1,
-    project: 2,
-    responsibility: 3,
-    experience_position: 4,
-    metric: 5,
-    education: 6,
-    certification: 7,
-    domain_evidence: 8
+    experience_position: 1,
+    project: 1,
+    responsibility: 2,
+    education: 2,
+    degree: 3,
+    skill: 4,
+    certification: 5,
+    metric: 6,
+    domain_evidence: 7,
+    summary: 8
   };
   return [...facts].sort((left, right) => (rank[left.fact_type] ?? 99) - (rank[right.fact_type] ?? 99));
+}
+
+function sectionRank(section: string) {
+  const index = SECTION_ORDER.indexOf(section);
+  return index === -1 ? 99 : index;
 }
 
 function formatScore(value: number) {

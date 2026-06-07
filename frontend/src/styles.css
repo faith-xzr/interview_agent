@@ -975,11 +975,74 @@ li {
   padding: 12px;
 }
 
+.section-fact-list {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.fact-section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--surface);
+}
+
+.fact-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fact-section-header h4 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.fact-section-header span {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 .fact-row {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 12px;
   background: var(--surface);
+}
+
+.fact-section .fact-row {
+  background: var(--surface-alt);
+}
+
+.compact-skill-row {
+  display: grid;
+  gap: 8px;
+}
+
+.skill-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #f7f9fc;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .fact-row-top {
