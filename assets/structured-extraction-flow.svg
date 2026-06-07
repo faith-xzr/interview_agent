@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">Structured Extraction Flow</title>
+  <desc id="desc">Input files and text are parsed, extracted by rules, optionally postprocessed by an LLM, and validated into profile and evidence facts.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#365b8c" />
+    </marker>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .box { fill: #ffffff; stroke: #b9c4d6; stroke-width: 2; rx: 8; }
+      .accent { fill: #eaf2ff; stroke: #6a8fc5; }
+      .title { font: 700 24px Arial, sans-serif; fill: #172033; }
+      .label { font: 700 17px Arial, sans-serif; fill: #172033; }
+      .note { font: 14px Arial, sans-serif; fill: #4b5870; }
+      .arrow { stroke: #365b8c; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="420" rx="16" />
+  <text class="title" x="40" y="48">Structured Extraction</text>
+  <text class="note" x="40" y="76">Rule-first extraction keeps provenance; DeepSeek-compatible postprocessing only accepts evidence-backed corrections.</text>
+  <g transform="translate(40 130)">
+    <rect class="box" width="170" height="120" />
+    <text class="label" x="24" y="38">Input</text>
+    <text class="note" x="24" y="66">JD text/file</text>
+    <text class="note" x="24" y="88">Resume PDF/DOCX/TXT</text>
+  </g>
+  <path class="arrow" d="M220 190 H295" />
+  <g transform="translate(305 130)">
+    <rect class="box" width="170" height="120" />
+    <text class="label" x="24" y="38">Python Parser</text>
+    <text class="note" x="24" y="66">pypdf / OCR</text>
+    <text class="note" x="24" y="88">python-docx / text</text>
+  </g>
+  <path class="arrow" d="M485 190 H560" />
+  <g transform="translate(570 130)">
+    <rect class="box" width="180" height="120" />
+    <text class="label" x="24" y="38">Rule Extraction</text>
+    <text class="note" x="24" y="66">Sections</text>
+    <text class="note" x="24" y="88">Profile + facts</text>
+  </g>
+  <path class="arrow" d="M760 190 H835" />
+  <g transform="translate(845 130)">
+    <rect class="box accent" width="235" height="120" />
+    <text class="label" x="24" y="38">LLM Postprocess</text>
+    <text class="note" x="24" y="66">Merge / reclassify</text>
+    <text class="note" x="24" y="88">Reject unsupported evidence</text>
+  </g>
+  <path class="arrow" d="M962 250 V320 H600" />
+  <g transform="translate(340 300)">
+    <rect class="box" width="260" height="78" />
+    <text class="label" x="24" y="32">Validated Output</text>
+    <text class="note" x="24" y="56">Candidate/JD profile + evidence facts</text>
+  </g>
+</svg>

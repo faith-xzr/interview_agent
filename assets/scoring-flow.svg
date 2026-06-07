@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">Scoring Flow</title>
+  <desc id="desc">JD requirements and candidate facts are matched with evidence retrieval to produce requirement scores and a 0-100 decision.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#315f52" />
+    </marker>
+    <style>
+      .bg { fill: #f6faf8; }
+      .box { fill: #ffffff; stroke: #b9cfc8; stroke-width: 2; rx: 8; }
+      .accent { fill: #e7f4ef; stroke: #579381; }
+      .title { font: 700 24px Arial, sans-serif; fill: #172033; }
+      .label { font: 700 17px Arial, sans-serif; fill: #172033; }
+      .note { font: 14px Arial, sans-serif; fill: #4b5870; }
+      .arrow { stroke: #315f52; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="420" rx="16" />
+  <text class="title" x="40" y="48">Matching Score</text>
+  <text class="note" x="40" y="76">Each score contribution is tied back to extracted facts and evidence snippets.</text>
+  <g transform="translate(55 140)">
+    <rect class="box" width="190" height="110" />
+    <text class="label" x="24" y="38">JD Requirements</text>
+    <text class="note" x="24" y="66">skills / years</text>
+    <text class="note" x="24" y="88">responsibilities</text>
+  </g>
+  <g transform="translate(55 280)">
+    <rect class="box" width="190" height="70" />
+    <text class="label" x="24" y="32">Candidate Facts</text>
+    <text class="note" x="24" y="54">section evidence</text>
+  </g>
+  <path class="arrow" d="M255 195 H360" />
+  <path class="arrow" d="M255 315 H360 V230" />
+  <g transform="translate(370 160)">
+    <rect class="box" width="210" height="110" />
+    <text class="label" x="24" y="38">Evidence Retrieval</text>
+    <text class="note" x="24" y="66">vector recall</text>
+    <text class="note" x="24" y="88">fact index fallback</text>
+  </g>
+  <path class="arrow" d="M590 215 H705" />
+  <g transform="translate(715 160)">
+    <rect class="box accent" width="190" height="110" />
+    <text class="label" x="24" y="38">Requirement Scores</text>
+    <text class="note" x="24" y="66">skill / project</text>
+    <text class="note" x="24" y="88">risk caps</text>
+  </g>
+  <path class="arrow" d="M915 215 H990" />
+  <g transform="translate(1000 160)">
+    <rect class="box" width="90" height="110" />
+    <text class="label" x="18" y="40">0-100</text>
+    <text class="note" x="18" y="68">Decision</text>
+  </g>
+</svg>
