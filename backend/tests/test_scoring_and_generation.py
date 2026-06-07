@@ -1,5 +1,6 @@
 from app.fallback_ai import extract_candidate_profile, extract_jd_profile
-from app.question_generator import generate_followups, generate_interview_questions
+from app.followups import generate_followups
+from app.question_generation import generate_interview_questions
 from app.scoring import score_candidate
 from app.schemas import CandidateProfile, ExtractedFact, JDProfile
 

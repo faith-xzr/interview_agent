@@ -3,7 +3,7 @@ from pathlib import Path
 
 from docx import Document
 
-from app.document_parser import extract_text_from_bytes
+from app.extraction.document_parser import extract_text_from_bytes
 from app.privacy import mask_pii, restore_pii
 
 

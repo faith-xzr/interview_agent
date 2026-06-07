@@ -38,7 +38,7 @@ def _extract_pdf_with_macos_ocr(content: bytes) -> str:
     if sys.platform != "darwin" or not shutil.which("swift"):
         return ""
 
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "macos_pdf_ocr.swift"
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "macos_pdf_ocr.swift"
     if not script_path.exists():
         return ""
 

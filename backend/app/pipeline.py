@@ -3,12 +3,13 @@ from typing import List, Tuple
 from uuid import uuid4
 
 from app.config import Settings
+from app.extraction.jd_extractor import extract_jd_facts
+from app.extraction.resume_extractor import extract_resume_profile
 from app.fallback_ai import extract_jd_profile
-from app.jd_extractor import extract_jd_facts
+from app.followups import generate_followups
 from app.llm_client import LLMClient
 from app.privacy import mask_pii, restore_pii_in_data
-from app.question_generator import generate_followups, generate_interview_questions
-from app.resume_extractor import extract_resume_profile
+from app.question_generation import generate_interview_questions
 from app.schemas import CandidateProfile, CandidateReport, ExtractedFact, JDProfile, RunReport
 from app.scoring import score_candidate
 from app.storage import RunStorage

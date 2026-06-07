@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from app.config import Settings, settings_from_env
-from app.document_parser import DocumentParseError, extract_text_from_bytes
+from app.extraction.document_parser import DocumentParseError, extract_text_from_bytes
 from app.pipeline import RecruitingPipeline
 
 

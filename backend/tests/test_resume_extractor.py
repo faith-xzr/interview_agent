@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from app.document_parser import extract_text_from_bytes
-from app.resume_extractor import extract_resume_profile
+from app.extraction.document_parser import extract_text_from_bytes
+from app.extraction.resume_extractor import extract_resume_profile
 
 
 SAMPLE_RESUME = (
