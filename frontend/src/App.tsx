@@ -1,11 +1,12 @@
 import { AlertCircle, ArrowUpRight, FileText, Loader2, Paperclip } from "lucide-react";
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
-import { createRun } from "./api";
+import { createRun, generateAnswerFollowup } from "./api";
 import type {
   CandidateReport,
   DimensionExplanation,
   ExtractedFact,
+  InterviewAnswerFollowUp,
   MatchReport,
   RequirementMatch,
   RunReport
@@ -181,6 +182,7 @@ export default function App() {
                   <CandidateDetail
                     candidate={selectedCandidate}
                     jdExtractionFacts={report.jd_extraction_facts}
+                    runId={report.run_id}
                     view={activeView}
                   />
                 </div>
@@ -385,10 +387,12 @@ function CandidateOverview({
 function CandidateDetail({
   candidate,
   jdExtractionFacts,
+  runId,
   view
 }: {
   candidate: CandidateReport;
   jdExtractionFacts: ExtractedFact[];
+  runId: string;
   view: Exclude<ResultView, "overview">;
 }) {
   const report = candidate.match_report;
@@ -440,7 +444,7 @@ function CandidateDetail({
             {report.interview_questions.map((item, index) => (
               <li key={`${item.question}-${index}`}>
                 <strong>{item.question}</strong>
-                <span>{item.focus} · {item.difficulty}</span>
+                <span>{item.focus}</span>
                 <p>{item.scoring_criteria}</p>
               </li>
             ))}
@@ -451,8 +455,128 @@ function CandidateDetail({
       {view === "followups" ? (
         <section className="detail-section">
           <h3>追问模拟</h3>
+          <FollowupSimulator candidate={candidate} runId={runId} />
+        </section>
+      ) : null}
+    </article>
+  );
+}
+
+function FollowupSimulator({ candidate, runId }: { candidate: CandidateReport; runId: string }) {
+  const questions = candidate.match_report.interview_questions;
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [candidateAnswer, setCandidateAnswer] = useState("");
+  const [result, setResult] = useState<InterviewAnswerFollowUp | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const selectedQuestion = questions[questionIndex] ?? questions[0] ?? null;
+  const questionSelectId = `followup-question-${candidate.candidate_id}`;
+  const answerId = `candidate-answer-${candidate.candidate_id}`;
+
+  useEffect(() => {
+    setQuestionIndex(0);
+    setCandidateAnswer("");
+    setResult(null);
+    setError(null);
+  }, [candidate.candidate_id, runId]);
+
+  async function handleGenerate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!candidateAnswer.trim()) {
+      setError("候选人回答不能为空。");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const nextResult = await generateAnswerFollowup({
+        runId,
+        candidateId: candidate.candidate_id,
+        questionIndex,
+        candidateAnswer
+      });
+      setResult(nextResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "追问生成失败，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="followup-panel">
+      <form className="followup-form" onSubmit={handleGenerate}>
+        <div className="followup-control">
+          <label htmlFor={questionSelectId}>选择面试题</label>
+          <select
+            id={questionSelectId}
+            value={questionIndex}
+            onChange={(event) => {
+              setQuestionIndex(Number(event.target.value));
+              setResult(null);
+              setError(null);
+            }}
+          >
+            {questions.map((item, index) => (
+              <option key={`${item.question}-${index}`} value={index}>
+                {`第 ${index + 1} 题：${item.focus}`}
+              </option>
+            ))}
+          </select>
+        </div>
+        {selectedQuestion ? (
+          <div className="selected-question">
+            <strong>{selectedQuestion.question}</strong>
+            <span>{selectedQuestion.focus}</span>
+          </div>
+        ) : null}
+        <div className="followup-control">
+          <label htmlFor={answerId}>候选人回答</label>
+          <textarea
+            aria-label="候选人回答"
+            id={answerId}
+            value={candidateAnswer}
+            onChange={(event) => setCandidateAnswer(event.target.value)}
+            placeholder="粘贴或输入候选人对这道题的回答"
+            rows={5}
+          />
+        </div>
+        {error ? (
+          <div className="error-box" role="alert">
+            <AlertCircle size={18} aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        ) : null}
+        <button className="secondary-button" type="submit" disabled={loading}>
+          {loading ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}
+          <span>{loading ? "生成中" : "生成追问"}</span>
+        </button>
+      </form>
+
+      {result ? (
+        <section className="followup-result">
+          <h4>回答诊断</h4>
+          <div className="score-pills">
+            <span>清晰度 {result.clarity_score}</span>
+            <span>深度 {result.depth_score}</span>
+            <span>{consistencyLabel(result.evidence_consistency)}</span>
+          </div>
+          <p>{result.answer_summary}</p>
+          {result.issues.length ? <List items={result.issues} /> : null}
+          <div className="followup-question-card">
+            <span>动态追问</span>
+            <strong>{result.followup_question}</strong>
+            <p>{result.reason}</p>
+            <small>{result.expected_signal}</small>
+          </div>
+        </section>
+      ) : null}
+
+      {candidate.match_report.followup_questions.length ? (
+        <section className="followup-static">
+          <h4>预面试待确认</h4>
           <ol className="question-list compact">
-            {report.followup_questions.map((item, index) => (
+            {candidate.match_report.followup_questions.map((item, index) => (
               <li key={`${item.question}-${index}`}>
                 <strong>{item.question}</strong>
                 <p>{item.reason}</p>
@@ -461,7 +585,7 @@ function CandidateDetail({
           </ol>
         </section>
       ) : null}
-    </article>
+    </div>
   );
 }
 
@@ -641,6 +765,12 @@ function statusClass(status: string) {
   if (status === "相关匹配") return "related";
   if (status === "弱匹配") return "weak";
   return "missing";
+}
+
+function consistencyLabel(value: string) {
+  if (value === "consistent") return "证据一致";
+  if (value === "contradictory") return "存在矛盾";
+  return "证据较弱";
 }
 
 function candidateSummary(report: MatchReport) {

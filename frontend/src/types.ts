@@ -76,15 +76,29 @@ export interface DimensionExplanation {
 export interface InterviewQuestion {
   question: string;
   focus: string;
-  difficulty: string;
   scoring_criteria: string;
-  evidence?: string | null;
 }
 
 export interface FollowUpQuestion {
   question: string;
   reason: string;
   related_evidence?: string | null;
+}
+
+export interface InterviewAnswerFollowUp {
+  question_index: number;
+  original_question: string;
+  candidate_answer: string;
+  answer_summary: string;
+  clarity_score: number;
+  depth_score: number;
+  evidence_consistency: string;
+  issues: string[];
+  followup_needed: boolean;
+  followup_question: string;
+  reason: string;
+  expected_signal: string;
+  source: string;
 }
 
 export interface MatchReport {

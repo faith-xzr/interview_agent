@@ -5,6 +5,18 @@ from app.scoring import score_candidate
 from app.schemas import CandidateProfile, ExtractedFact, JDProfile
 
 
+class QueueLLM:
+    available = True
+
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+        self.calls = []
+
+    def complete_json(self, system_prompt: str, user_prompt: str):
+        self.calls.append((system_prompt, user_prompt))
+        return self.payloads.pop(0)
+
+
 def test_schema_accepts_complete_profiles():
     jd = JDProfile(
         job_title="高级 Python 后端工程师",
@@ -196,7 +208,126 @@ def test_question_and_followup_generation_has_required_counts():
     questions = generate_interview_questions(jd, candidate, match)
     followups = generate_followups(candidate, match)
 
-    assert len(questions) >= 10
-    assert all(q.focus and q.difficulty and q.scoring_criteria for q in questions)
+    assert len(questions) == 10
+    assert all(q.question and q.focus and q.scoring_criteria for q in questions)
+    assert all(set(q.model_dump().keys()) == {"question", "focus", "scoring_criteria"} for q in questions)
     assert 3 <= len(followups) <= 5
     assert all(item.question for item in followups)
+
+
+def test_llm_question_generation_uses_jd_resume_and_returns_lightweight_questions():
+    llm = QueueLLM(
+        [
+            {
+                "questions": [
+                    {
+                        "question": "请复盘你在低延迟推荐项目中负责的召回链路，核心瓶颈是怎么定位的？",
+                        "focus": "简历项目中的推荐系统工程能力",
+                        "scoring_criteria": "优秀回答应包含个人职责、召回链路、性能指标、排查路径和量化结果。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "简历提到 Kafka 和 Flink，请说明你如何设计实时特征处理的数据流？",
+                        "focus": "实时数据处理能力",
+                        "scoring_criteria": "优秀回答应说明数据源、状态管理、延迟控制、容错和监控。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "你在推荐排序优化中如何选择评价指标，并判断模型改动值得上线？",
+                        "focus": "业务指标与上线判断",
+                        "scoring_criteria": "优秀回答应覆盖离线指标、线上实验、风险、回滚和业务收益。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "请说明你在项目里如何和产品或运营确认推荐效果是否符合业务目标？",
+                        "focus": "技术与业务目标对齐",
+                        "scoring_criteria": "优秀回答应体现目标拆解、数据口径、沟通机制和取舍判断。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "简历中的高并发经验如果迁移到本岗位，你会优先复用哪些设计？",
+                        "focus": "经验迁移能力",
+                        "scoring_criteria": "优秀回答应结合 JD 职责说明可复用设计、限制条件和验证方式。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "你如何证明自己在低延迟推荐项目中的贡献不是只参与而是关键负责人？",
+                        "focus": "项目真实性和个人贡献",
+                        "scoring_criteria": "优秀回答应给出负责模块、决策点、协作边界和结果证据。",
+                        "category": "technical_business",
+                        "basis": "resume",
+                    },
+                    {
+                        "question": "JD 要求 FastAPI 平台建设，你会如何设计一个可观测的服务接口？",
+                        "focus": "JD 核心职责的方案设计",
+                        "scoring_criteria": "优秀回答应包含接口边界、错误处理、日志、指标、压测和告警。",
+                        "category": "technical_business",
+                        "basis": "jd",
+                    },
+                    {
+                        "question": "如果推荐链路上线后出现核心指标下降，你会如何止损和复盘？",
+                        "focus": "线上问题处理",
+                        "scoring_criteria": "优秀回答应说明止损动作、根因定位、数据验证和长期改进。",
+                        "category": "technical_business",
+                        "basis": "jd",
+                    },
+                    {
+                        "question": "当产品想快速上线但你认为风险较高时，你会如何推进决策？",
+                        "focus": "业务沟通与风险判断",
+                        "scoring_criteria": "优秀回答应体现风险量化、方案对比、里程碑和共同决策。",
+                        "category": "technical_business",
+                        "basis": "jd",
+                    },
+                    {
+                        "question": "你为什么考虑这个岗位，最希望在下一份工作里获得什么成长？",
+                        "focus": "求职动机与稳定性",
+                        "scoring_criteria": "优秀回答应真实说明动机、岗位匹配点、成长目标和长期稳定性。",
+                        "category": "hr",
+                        "basis": "general",
+                    },
+                ]
+            }
+        ]
+    )
+    jd = JDProfile(
+        job_title="高级推荐系统后端工程师",
+        responsibilities=["负责 FastAPI 推荐平台建设", "优化推荐链路稳定性"],
+        required_skills=["Python", "FastAPI", "Kafka", "Flink"],
+        seniority="高级",
+    )
+    candidate = CandidateProfile(
+        name="小周",
+        projects=["低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。"],
+        skills=["Python", "Kafka", "Flink"],
+        highlights=["推荐链路延迟降低 30%"],
+    )
+    facts = [
+        ExtractedFact(
+            fact_type="project",
+            value="低延迟推荐项目",
+            evidence="低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。",
+            section="projects",
+        )
+    ]
+    match = score_candidate(jd, candidate, ["低延迟推荐项目 Kafka Flink"])
+
+    questions = generate_interview_questions(
+        jd,
+        candidate,
+        match,
+        llm=llm,
+        resume_text="小周\n低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。",
+        extraction_facts=facts,
+    )
+
+    assert len(questions) == 10
+    assert all(set(q.model_dump().keys()) == {"question", "focus", "scoring_criteria"} for q in questions)
+    assert "高级推荐系统后端工程师" in llm.calls[0][1]
+    assert "低延迟推荐项目" in llm.calls[0][1]
+    assert "Kafka" in llm.calls[0][1]
+    assert "{{" not in llm.calls[0][1]

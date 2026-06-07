@@ -13,7 +13,7 @@ from app.llm_client import LLMClient
 from app.privacy import mask_pii, restore_pii_in_data
 from app.question_generation import generate_interview_questions
 from app.schemas import CandidateProfile, CandidateReport, ExtractedFact, JDProfile, RunReport
-from app.scoring import score_candidate
+from app.scoring import score_candidate, score_candidate_with_llm
 from app.storage import RunStorage
 from app.vector_store import VectorStore
 
@@ -38,8 +38,26 @@ class RecruitingPipeline:
             profile, extraction_facts = self._extract_candidate(resume_text, source_name, warnings)
             self.vector_store.add_document(run_id, candidate_id, source_name, resume_text)
             evidence_texts = self.vector_store.query(run_id, candidate_id, query_text or jd_text, limit=5)
-            match = score_candidate(jd_profile, profile, evidence_texts, extraction_facts)
-            match.interview_questions = generate_interview_questions(jd_profile, profile, match)
+            match = score_candidate_with_llm(
+                self.llm,
+                jd_profile,
+                profile,
+                evidence_texts,
+                jd_extraction_facts,
+                extraction_facts,
+            )
+            if match is None:
+                match = score_candidate(jd_profile, profile, evidence_texts, extraction_facts)
+            question_resume_text = mask_pii(resume_text, candidate_name=profile.name).text
+            match.interview_questions = generate_interview_questions(
+                jd_profile,
+                profile,
+                match,
+                llm=self.llm,
+                jd_text=jd_text,
+                resume_text=question_resume_text,
+                extraction_facts=extraction_facts,
+            )
             match.followup_questions = generate_followups(profile, match)
             candidates.append(
                 CandidateReport(
@@ -99,7 +117,10 @@ class RecruitingPipeline:
                     masked.replacements,
                 )
                 profile = CandidateProfile.model_validate(restored_profile)
-                extraction_facts = [ExtractedFact.model_validate(fact) for fact in restored_facts]
+                extraction_facts = _merge_extraction_facts(
+                    [ExtractedFact.model_validate(fact) for fact in restored_facts],
+                    initial_result.facts,
+                )
                 return _merge_candidate_profile(profile, initial_profile), extraction_facts
             warnings.append(f"{source_name} 的 LLM 简历抽取失败，已使用本地规则结果。")
         return initial_profile, initial_result.facts
@@ -127,3 +148,17 @@ def _merge_candidate_profile(profile: CandidateProfile, fallback: CandidateProfi
         if not getattr(profile, field_name):
             setattr(profile, field_name, getattr(fallback, field_name))
     return profile
+
+
+def _merge_extraction_facts(
+    primary: List[ExtractedFact], fallback: List[ExtractedFact]
+) -> List[ExtractedFact]:
+    seen = set()
+    merged: List[ExtractedFact] = []
+    for fact in [*primary, *fallback]:
+        key = (fact.fact_type, fact.value.lower(), fact.evidence.lower(), fact.section)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(fact)
+    return merged

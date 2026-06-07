@@ -8,7 +8,9 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, settings_from_env
 from app.extraction.document_parser import DocumentParseError, extract_text_from_bytes
+from app.interview_followup import generate_interview_answer_followup
 from app.pipeline import RecruitingPipeline
+from app.schemas import InterviewAnswerFollowUpRequest
 
 
 def create_app(settings: Settings = None) -> FastAPI:
@@ -51,6 +53,30 @@ def create_app(settings: Settings = None) -> FastAPI:
         if report is None:
             raise HTTPException(status_code=404, detail="未找到该运行记录。")
         return report
+
+    @app.post("/api/runs/{run_id}/answer-followup")
+    async def create_answer_followup(run_id: str, request: InterviewAnswerFollowUpRequest):
+        report = pipeline.get_run(run_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="未找到该运行记录。")
+        candidate = next(
+            (item for item in report.candidates if item.candidate_id == request.candidate_id),
+            None,
+        )
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="未找到该候选人。")
+        if not request.candidate_answer.strip():
+            raise HTTPException(status_code=400, detail="候选人回答不能为空。")
+        if request.question_index < 0 or request.question_index >= len(candidate.match_report.interview_questions):
+            raise HTTPException(status_code=400, detail="面试题序号无效。")
+        return await run_in_threadpool(
+            generate_interview_answer_followup,
+            pipeline.llm,
+            report.jd_profile,
+            candidate,
+            request.question_index,
+            request.candidate_answer,
+        )
 
     @app.get("/api/runs/{run_id}/export")
     def export_run(run_id: str) -> Response:

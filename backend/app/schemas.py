@@ -182,15 +182,40 @@ class DimensionExplanation(BaseModel):
 class InterviewQuestion(BaseModel):
     question: str
     focus: str
-    difficulty: str
     scoring_criteria: str
-    evidence: Optional[str] = None
 
 
 class FollowUpQuestion(BaseModel):
     question: str
     reason: str
     related_evidence: Optional[str] = None
+
+
+class InterviewAnswerFollowUpRequest(BaseModel):
+    candidate_id: str
+    question_index: int
+    candidate_answer: str
+
+
+class InterviewAnswerFollowUp(BaseModel):
+    question_index: int
+    original_question: str
+    candidate_answer: str
+    answer_summary: str
+    clarity_score: int = 0
+    depth_score: int = 0
+    evidence_consistency: str = "weak"
+    issues: List[str] = Field(default_factory=list)
+    followup_needed: bool = True
+    followup_question: str
+    reason: str
+    expected_signal: str
+    source: str = "rules"
+
+    @field_validator("clarity_score", "depth_score")
+    @classmethod
+    def clamp_answer_score(cls, value: int) -> int:
+        return max(0, min(100, int(value)))
 
 
 class MatchReport(BaseModel):

@@ -30,8 +30,10 @@ class QueueLLM:
 
     def __init__(self, payloads):
         self.payloads = list(payloads)
+        self.calls = []
 
     def complete_json(self, system_prompt: str, user_prompt: str):
+        self.calls.append((system_prompt, user_prompt))
         return self.payloads.pop(0)
 
 
@@ -85,6 +87,36 @@ def test_run_pipeline_rejects_empty_resume_input(tmp_path):
 
     assert response.status_code == 400
     assert "至少需要一份有效简历内容" in response.json()["detail"]
+
+
+def test_answer_followup_generates_question_from_candidate_answer(tmp_path):
+    client = make_client(tmp_path)
+    run_response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "高级 Python 后端工程师，5年以上经验，负责 FastAPI、RAG、SQL 平台建设。",
+            "resume_texts": "王五\n7年 Python 后端经验。项目：RAG 检索平台，使用 FastAPI 和 SQL。",
+        },
+    )
+    run_report = run_response.json()
+    candidate_id = run_report["candidates"][0]["candidate_id"]
+
+    response = client.post(
+        f"/api/runs/{run_report['run_id']}/answer-followup",
+        json={
+            "candidate_id": candidate_id,
+            "question_index": 0,
+            "candidate_answer": "我做过 RAG 系统，主要用了 FastAPI，整体效果还可以。",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["followup_needed"] is True
+    assert payload["followup_question"]
+    assert "具体" in payload["followup_question"] or "个人" in payload["followup_question"]
+    assert payload["clarity_score"] < 70
+    assert any("量化" in issue or "个人" in issue for issue in payload["issues"])
 
 
 def test_health_responds_while_run_pipeline_is_processing(tmp_path, monkeypatch):
@@ -277,6 +309,382 @@ Agent 编排 | RAG
     assert candidate.profile.education == ["某重点理工类大学计算机科学与技术本科。"]
     assert candidate.profile.work_experiences == ["企业级智能助手项目成员：负责 RAG 召回评估和上线验收。"]
     assert any(fact.extractor == "llm_resume" for fact in candidate.extraction_facts)
+
+
+def test_pipeline_uses_llm_dynamic_match_scoring_when_available(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = (
+        "AIGC 内容运营，要求熟练运用 ChatGPT，能直接使用 Midjourney 产出视觉素材，"
+        "能使用 Runway 等 AI 工具辅助文案，并沉淀 AI 内容 SOP；有成功自媒体案例或 KOL 经历优先。"
+    )
+    resume_text = """
+小林
+项目经历
+• 使用 Midjourney 产出视觉素材，用 Runway 辅助短视频脚本。
+• 参与 KOL 合作案例复盘。
+专业技能
+Midjourney | Runway
+"""
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "key_points": [
+                    {
+                        "topic": "必备技能",
+                        "summary": "熟练运用 ChatGPT",
+                        "evidence": "熟练运用 ChatGPT",
+                        "importance": "high",
+                        "category": "skill",
+                    },
+                    {
+                        "topic": "必备技能",
+                        "summary": "能直接使用 Midjourney 产出视觉素材",
+                        "evidence": "能直接使用 Midjourney 产出视觉素材",
+                        "importance": "high",
+                        "category": "skill",
+                    },
+                    {
+                        "topic": "必备技能",
+                        "summary": "能使用 Runway 等 AI 工具辅助文案",
+                        "evidence": "能使用 Runway 等 AI 工具辅助文案",
+                        "importance": "high",
+                        "category": "skill",
+                    },
+                    {
+                        "topic": "核心职责",
+                        "summary": "能沉淀 AI 内容 SOP",
+                        "evidence": "沉淀 AI 内容 SOP",
+                        "importance": "high",
+                        "category": "responsibility",
+                    },
+                    {
+                        "topic": "加分项",
+                        "summary": "有成功自媒体案例或 KOL 经历",
+                        "evidence": "有成功自媒体案例或 KOL 经历优先",
+                        "importance": "low",
+                        "category": "nice_to_have_skill",
+                    },
+                ],
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "projects": ["使用 Midjourney 产出视觉素材，用 Runway 辅助短视频脚本。", "参与 KOL 合作案例复盘。"],
+                    "skills": ["Midjourney", "Runway"],
+                },
+                "facts": [
+                    {
+                        "label": "项目经验",
+                        "category": "project",
+                        "summary": "使用 Midjourney 产出视觉素材，用 Runway 辅助短视频脚本。",
+                        "evidence": "• 使用 Midjourney 产出视觉素材，用 Runway 辅助短视频脚本。",
+                        "section": "projects",
+                        "importance": "high",
+                    },
+                    {
+                        "label": "项目经验",
+                        "category": "project",
+                        "summary": "参与 KOL 合作案例复盘。",
+                        "evidence": "• 参与 KOL 合作案例复盘。",
+                        "section": "projects",
+                        "importance": "medium",
+                    },
+                ],
+            },
+            {
+                "rubric": [
+                    {
+                        "dimension": "AIGC工具生态",
+                        "requirement": "熟练运用 ChatGPT",
+                        "requirement_type": "core_skill",
+                        "max_score": 20,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "AIGC工具生态",
+                        "requirement": "能直接使用 Midjourney 产出视觉素材",
+                        "requirement_type": "core_skill",
+                        "max_score": 20,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "AIGC工具生态",
+                        "requirement": "能使用 Runway 等 AI 工具辅助文案",
+                        "requirement_type": "core_skill",
+                        "max_score": 15,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "内容生产方法",
+                        "requirement": "能沉淀 AI 内容 SOP",
+                        "requirement_type": "responsibility",
+                        "max_score": 25,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "平台与案例",
+                        "requirement": "有成功自媒体案例或 KOL 经历",
+                        "requirement_type": "project_depth",
+                        "max_score": 20,
+                        "priority": "nice_to_have",
+                    },
+                ]
+            },
+            {
+                "matches": [
+                    {
+                        "requirement": "熟练运用 ChatGPT",
+                        "status": "未匹配",
+                        "confidence": 0,
+                        "contribution": 0,
+                        "reason": "简历未明确覆盖 ChatGPT 使用经验",
+                        "evidence_indexes": [],
+                    },
+                    {
+                        "requirement": "能直接使用 Midjourney 产出视觉素材",
+                        "status": "强匹配",
+                        "confidence": 0.95,
+                        "contribution": 19,
+                        "reason": "项目经历直接说明使用 Midjourney 产出视觉素材",
+                        "evidence_indexes": [0],
+                    },
+                    {
+                        "requirement": "能使用 Runway 等 AI 工具辅助文案",
+                        "status": "相关匹配",
+                        "confidence": 0.8,
+                        "contribution": 9,
+                        "reason": "简历展示 Runway 辅助短视频脚本经验",
+                        "evidence_indexes": [0],
+                    },
+                    {
+                        "requirement": "能沉淀 AI 内容 SOP",
+                        "status": "未匹配",
+                        "confidence": 0,
+                        "contribution": 0,
+                        "reason": "简历未出现 SOP 沉淀证据",
+                        "evidence_indexes": [],
+                    },
+                    {
+                        "requirement": "有成功自媒体案例或 KOL 经历",
+                        "status": "直接匹配",
+                        "confidence": 0.9,
+                        "contribution": 16,
+                        "reason": "简历有 KOL 合作案例证据",
+                        "evidence_indexes": [1],
+                    },
+                ]
+            },
+        ]
+    )
+
+    report = pipeline.run(jd_text, [("小林.txt", resume_text)])
+
+    candidate = report.candidates[0]
+    assert candidate.match_report.total_score == 44
+    assert candidate.match_report.dimension_scores["AIGC工具生态"] == 28
+    assert any(
+        item.dimension == "内容生产方法" and item.requirement == "能沉淀 AI 内容 SOP"
+        for item in candidate.match_report.requirement_matches
+    )
+    stored = pipeline.get_run(report.run_id)
+    assert stored.candidates[0].match_report.dimension_scores["平台与案例"] == 16
+
+
+def test_pipeline_uses_llm_question_generation_after_matching(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = "高级推荐系统后端工程师，负责 FastAPI 推荐平台建设，要求 Kafka、Flink 和推荐链路优化经验。"
+    resume_text = """
+小周
+项目经历
+• 低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python，推荐链路延迟降低 30%。
+专业技能
+Python | Kafka | Flink
+"""
+    llm_questions = [
+        {
+            "question": f"模型生成面试题 {index + 1}",
+            "focus": f"模型生成考察点 {index + 1}",
+            "scoring_criteria": f"模型生成评分标准 {index + 1}",
+            "category": "hr" if index == 9 else "technical_business",
+            "basis": "resume" if index < 6 else ("general" if index == 9 else "jd"),
+        }
+        for index in range(10)
+    ]
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "key_points": [
+                    {
+                        "topic": "必备技能",
+                        "summary": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "evidence": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "importance": "high",
+                        "category": "skill",
+                    },
+                    {
+                        "topic": "核心职责",
+                        "summary": "负责 FastAPI 推荐平台建设",
+                        "evidence": "负责 FastAPI 推荐平台建设",
+                        "importance": "high",
+                        "category": "responsibility",
+                    },
+                ],
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "projects": ["低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。"],
+                    "skills": ["Python", "Kafka", "Flink"],
+                    "highlights": ["推荐链路延迟降低 30%"],
+                },
+                "facts": [
+                    {
+                        "label": "项目经验",
+                        "category": "project",
+                        "summary": "低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。",
+                        "evidence": "• 低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python，推荐链路延迟降低 30%。",
+                        "section": "projects",
+                        "importance": "high",
+                    }
+                ],
+            },
+            {
+                "rubric": [
+                    {
+                        "dimension": "推荐工程",
+                        "requirement": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "requirement_type": "core_skill",
+                        "max_score": 60,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "后端平台",
+                        "requirement": "负责 FastAPI 推荐平台建设",
+                        "requirement_type": "responsibility",
+                        "max_score": 40,
+                        "priority": "must_have",
+                    },
+                ]
+            },
+            {
+                "matches": [
+                    {
+                        "requirement": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "status": "强匹配",
+                        "confidence": 0.95,
+                        "contribution": 58,
+                        "reason": "简历项目直接覆盖 Kafka、Flink 和推荐链路优化",
+                        "evidence_indexes": [0],
+                    },
+                    {
+                        "requirement": "负责 FastAPI 推荐平台建设",
+                        "status": "相关匹配",
+                        "confidence": 0.7,
+                        "contribution": 24,
+                        "reason": "简历有 Python 后端经验，但 FastAPI 证据较弱",
+                        "evidence_indexes": [0],
+                    },
+                ]
+            },
+            {"questions": llm_questions},
+        ]
+    )
+
+    report = pipeline.run(jd_text, [("小周.txt", resume_text)])
+
+    questions = report.candidates[0].match_report.interview_questions
+    assert [item.question for item in questions] == [f"模型生成面试题 {index + 1}" for index in range(10)]
+    assert all(set(item.model_dump().keys()) == {"question", "focus", "scoring_criteria"} for item in questions)
+    assert len(pipeline.llm.calls) == 5
+    assert "低延迟推荐项目" in pipeline.llm.calls[-1][1]
+    assert "高级推荐系统后端工程师" in pipeline.llm.calls[-1][1]
+
+
+def test_pipeline_keeps_rule_facts_when_llm_resume_returns_partial_facts(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = "后端开发工程师，要求 Java、Spring Boot、MySQL 和 Docker。"
+    resume_text = """
+小文
+教育背景
+某理工类重点大学（985/211）| 计算机科学与技术 | 本科 | 2022.09-2026.06
+实习经历
+某互联网大厂 | 后端开发实习生 | 2024.06-2024.09
+• 负责高并发秒杀系统的接口优化，通过引入 Redis 缓存与消息队列削峰，使系统 QPS 承载能力提升 3 倍。
+专业技能
+Java/Go 后端开发、Spring Boot/Django 框架、MySQL/PostgreSQL 数据库、Docker/K8s 容器化部署与 CI/CD
+"""
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "key_points": [
+                    {
+                        "topic": "必备技能",
+                        "summary": "要求 Java、Spring Boot、MySQL 和 Docker",
+                        "evidence": "要求 Java、Spring Boot、MySQL 和 Docker",
+                        "importance": "high",
+                        "category": "skill",
+                    }
+                ],
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "skills": [
+                        "Java/Go 后端开发",
+                        "Spring Boot/Django 框架",
+                        "MySQL/PostgreSQL 数据库",
+                        "Docker/K8s 容器化部署与 CI/CD",
+                    ],
+                },
+                "facts": [
+                    {
+                        "label": "专业技能",
+                        "category": "skill",
+                        "summary": "熟练掌握 Java/Go 后端开发、Spring Boot/Django 框架、MySQL/PostgreSQL 数据库、Docker/K8s 容器化部署与 CI/CD",
+                        "evidence": "Java/Go 后端开发、Spring Boot/Django 框架、MySQL/PostgreSQL 数据库、Docker/K8s 容器化部署与 CI/CD",
+                        "section": "skills",
+                        "importance": "high",
+                    }
+                ],
+            },
+        ]
+    )
+
+    report = pipeline.run(jd_text, [("小文.txt", resume_text)])
+
+    candidate = report.candidates[0]
+    assert candidate.profile.education
+    assert candidate.profile.work_experiences
+    assert any(fact.extractor == "llm_resume" and fact.section == "skills" for fact in candidate.extraction_facts)
+    assert any(fact.section == "education" for fact in candidate.extraction_facts)
+    assert any(fact.section == "experience" for fact in candidate.extraction_facts)
 
 
 def test_run_pipeline_accepts_jd_text_with_resume_file_only(tmp_path):

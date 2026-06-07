@@ -191,9 +191,7 @@ const demoReport = {
         interview_questions: Array.from({ length: 10 }, (_, index) => ({
           question: `面试问题 ${index + 1}`,
           focus: "考察点",
-          difficulty: "中级",
-          scoring_criteria: "评分标准",
-          evidence: "面试题来源证据"
+          scoring_criteria: "评分标准"
         })),
         followup_questions: [
           { question: "请补充项目指标。", reason: "模糊点", related_evidence: "追问来源证据 1" },
@@ -247,9 +245,7 @@ const demoReport = {
         interview_questions: Array.from({ length: 10 }, (_, index) => ({
           question: `低匹配面试问题 ${index + 1}`,
           focus: "考察点",
-          difficulty: "初级",
-          scoring_criteria: "评分标准",
-          evidence: "低匹配面试题来源证据"
+          scoring_criteria: "评分标准"
         })),
         followup_questions: [
           { question: "请说明 Python 经验。", reason: "缺口", related_evidence: "低匹配追问来源证据 1" },
@@ -268,6 +264,26 @@ describe("App", () => {
       const url = String(input);
       if (url.endsWith("/api/runs")) {
         return new Response(JSON.stringify(demoReport), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/runs/run-1/answer-followup")) {
+        return new Response(JSON.stringify({
+          question_index: 0,
+          original_question: "面试问题 1",
+          candidate_answer: "我做过 RAG 系统，主要用了 FastAPI，效果还可以。",
+          answer_summary: "候选人提到做过 RAG 系统，但没有展开个人职责和指标。",
+          clarity_score: 42,
+          depth_score: 36,
+          evidence_consistency: "weak",
+          issues: ["缺少个人职责", "缺少量化结果"],
+          followup_needed: true,
+          followup_question: "你刚才提到效果还可以，能具体说明你个人负责的环节和用什么指标验证效果吗？",
+          reason: "回答缺少可验证结果。",
+          expected_signal: "候选人能否补充个人贡献和量化指标。",
+          source: "llm"
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -358,11 +374,36 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "试题生成" }));
     expect(screen.getByText("面试问题 1")).toBeInTheDocument();
-    expect(screen.queryByText("面试题来源证据")).not.toBeInTheDocument();
+    expect(screen.getAllByText("评分标准").length).toBeGreaterThan(0);
+    expect(screen.queryByText("中级")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "追问模拟" }));
     expect(screen.getByText("请补充项目指标。")).toBeInTheDocument();
     expect(screen.queryByText("追问来源证据 1")).not.toBeInTheDocument();
+  });
+
+  test("generates follow-up after a candidate answers an interview question", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
+    await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+
+    await screen.findByText("候选人总览");
+    await user.click(screen.getByRole("button", { name: "追问模拟" }));
+    await user.type(
+      screen.getByLabelText("候选人回答"),
+      "我做过 RAG 系统，主要用了 FastAPI，效果还可以。"
+    );
+    await user.click(screen.getByRole("button", { name: "生成追问" }));
+
+    expect(await screen.findByText("回答诊断")).toBeInTheDocument();
+    expect(screen.getByText("你刚才提到效果还可以，能具体说明你个人负责的环节和用什么指标验证效果吗？")).toBeInTheDocument();
+    expect(screen.getByText("缺少个人职责")).toBeInTheDocument();
+    expect(screen.getByText("清晰度 42")).toBeInTheDocument();
   });
 
   test("shows API errors in the workspace", async () => {
