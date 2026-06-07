@@ -47,8 +47,8 @@ const demoReport = {
       profile: {
         name: "王五",
         contacts: { phone: "13812345678" },
-        education: ["本科"],
-        work_experiences: ["7年 Python 后端经验"],
+        education: ["某理工大学计算机科学与技术本科。"],
+        work_experiences: ["头部互联网平台后端开发实习生：负责 RAG 检索平台后端接口、SQL 查询和跨端联调。"],
         projects: ["RAG 检索平台"],
         skills: ["Python", "FastAPI", "SQL"],
         certifications: [],
@@ -58,6 +58,36 @@ const demoReport = {
       },
       parse_warnings: [],
       extraction_facts: [
+        {
+          fact_type: "target_role",
+          value: "全栈开发工程师",
+          evidence: "求职意向：全栈开发工程师",
+          section: "basic",
+          line_start: 2,
+          line_end: 2,
+          confidence: 0.92,
+          extractor: "llm_resume"
+        },
+        {
+          fact_type: "education_summary",
+          value: "某理工大学计算机科学与技术本科。",
+          evidence: "某理工大学 计算机科学与技术 本科",
+          section: "education",
+          line_start: 5,
+          line_end: 5,
+          confidence: 0.82,
+          extractor: "llm_resume"
+        },
+        {
+          fact_type: "work_summary",
+          value: "头部互联网平台后端开发实习生：负责 RAG 检索平台后端接口、SQL 查询和跨端联调。",
+          evidence: "头部互联网平台｜后端开发实习生；负责 RAG 检索平台后端接口、SQL 查询和跨端联调。",
+          section: "experience",
+          line_start: 8,
+          line_end: 9,
+          confidence: 0.9,
+          extractor: "llm_resume"
+        },
         {
           fact_type: "skill",
           value: "Python",
@@ -163,12 +193,68 @@ const demoReport = {
           focus: "考察点",
           difficulty: "中级",
           scoring_criteria: "评分标准",
-          evidence: "证据"
+          evidence: "面试题来源证据"
         })),
         followup_questions: [
-          { question: "请补充项目指标。", reason: "模糊点", related_evidence: "证据" },
-          { question: "请说明个人贡献。", reason: "模糊点", related_evidence: "证据" },
-          { question: "请说明团队规模。", reason: "模糊点", related_evidence: "证据" }
+          { question: "请补充项目指标。", reason: "模糊点", related_evidence: "追问来源证据 1" },
+          { question: "请说明个人贡献。", reason: "模糊点", related_evidence: "追问来源证据 2" },
+          { question: "请说明团队规模。", reason: "模糊点", related_evidence: "追问来源证据 3" }
+        ]
+      }
+    },
+    {
+      candidate_id: "candidate-2",
+      source_name: "resume-2.txt",
+      profile: {
+        name: "赵六",
+        contacts: {},
+        education: [],
+        work_experiences: ["2年客服经验"],
+        projects: ["客户满意度运营项目"],
+        skills: ["Excel"],
+        certifications: [],
+        highlights: [],
+        risk_points: [],
+        ambiguous_points: []
+      },
+      parse_warnings: [],
+      extraction_facts: [],
+      match_report: {
+        total_score: 42,
+        decision: "暂不推进",
+        dimension_scores: {
+          "核心技能与工具": 0,
+          "岗位职责匹配": 3,
+          "年限与级别": 4,
+          "项目证据深度": 5,
+          "行业/业务背景": 0,
+          "教育/证书/硬条件": 0,
+          "风险扣分": -9
+        },
+        score_breakdown: {
+          skill_score: 0,
+          experience_score: 4,
+          project_score: 8,
+          industry_score: 0,
+          education_score: 0,
+          risk_deduction: 9
+        },
+        match_reasons: ["简历中存在少量可复用经历，但与岗位核心要求关联有限"],
+        gap_reasons: ["核心技能与工具待确认：Python（简历未明确覆盖该要求）"],
+        evidence_snippets: [{ source: "片段 1", text: "客服 Excel" }],
+        dimension_explanations: [],
+        requirement_matches: [],
+        interview_questions: Array.from({ length: 10 }, (_, index) => ({
+          question: `低匹配面试问题 ${index + 1}`,
+          focus: "考察点",
+          difficulty: "初级",
+          scoring_criteria: "评分标准",
+          evidence: "低匹配面试题来源证据"
+        })),
+        followup_questions: [
+          { question: "请说明 Python 经验。", reason: "缺口", related_evidence: "低匹配追问来源证据 1" },
+          { question: "请补充后端项目。", reason: "缺口", related_evidence: "低匹配追问来源证据 2" },
+          { question: "请说明 SQL 使用经历。", reason: "缺口", related_evidence: "低匹配追问来源证据 3" }
         ]
       }
     }
@@ -218,8 +304,14 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getAllByText("王五").length).toBeGreaterThan(0));
     expect(screen.getAllByText("88").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("推荐推进").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("核心技能匹配：Python, FastAPI, SQL").length).toBeGreaterThan(0);
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.queryByText("必备技能")).not.toBeInTheDocument();
+    expect(screen.queryByText("Python · FastAPI · SQL")).not.toBeInTheDocument();
+    expect(screen.queryByText("推荐推进")).not.toBeInTheDocument();
+    expect(screen.queryByText("暂不推进")).not.toBeInTheDocument();
+    expect(screen.queryByText("核心技能匹配：Python, FastAPI, SQL")).not.toBeInTheDocument();
+    expect(screen.queryByText("核心技能与工具待确认：Python（简历未明确覆盖该要求）")).not.toBeInTheDocument();
+    expect(screen.queryByText("简历中存在少量可复用经历，但与岗位核心要求关联有限")).not.toBeInTheDocument();
 
     expect(screen.queryByRole("link", { name: "导出 JSON" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "总览" })).toHaveAttribute("aria-pressed", "true");
@@ -238,25 +330,39 @@ describe("App", () => {
     expect(screen.getByText("抽取过程")).toBeInTheDocument();
     expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
     expect(screen.getByText("简历抽取事实")).toBeInTheDocument();
-    expect(screen.getAllByText("required_skill").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("必备技能").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "学历背景" })).toBeInTheDocument();
+    expect(screen.getByText("某理工大学计算机科学与技术本科。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实习/工作经验" })).toBeInTheDocument();
+    expect(screen.getByText("头部互联网平台后端开发实习生：负责 RAG 检索平台后端接口、SQL 查询和跨端联调。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目经验" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "专业技能" })).toBeInTheDocument();
     expect(screen.getByText("FastAPI")).toHaveClass("skill-chip");
     expect(screen.getByText("SQL")).toHaveClass("skill-chip");
-    expect(screen.getByText("专业技能：Python | FastAPI | SQL")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "基本信息" })).not.toBeInTheDocument();
+    expect(screen.queryByText("target_role")).not.toBeInTheDocument();
+    expect(screen.queryByText("required_skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("90%")).not.toBeInTheDocument();
+    expect(screen.queryByText("专业技能：Python | FastAPI | SQL")).not.toBeInTheDocument();
+    expect(screen.queryByText("项目：RAG 检索平台，使用 FastAPI、SQL 和 React")).not.toBeInTheDocument();
+    expect(screen.queryByText("projects · 第 8 行 · section_rules")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "智能匹配打分" }));
     expect(screen.getByText("评分拆解")).toBeInTheDocument();
     expect(screen.getAllByText("Python").length).toBeGreaterThan(0);
     expect(screen.getByText("强匹配")).toBeInTheDocument();
     expect(screen.getByText("贡献 7.4/8")).toBeInTheDocument();
-    expect(screen.getByText("项目证据 · 第 8 行")).toBeInTheDocument();
+    expect(screen.queryByText("项目证据 · 第 8 行")).not.toBeInTheDocument();
+    expect(screen.queryByText("RAG 检索平台 FastAPI SQL")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "试题生成" }));
     expect(screen.getByText("面试问题 1")).toBeInTheDocument();
+    expect(screen.queryByText("面试题来源证据")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "追问模拟" }));
     expect(screen.getByText("请补充项目指标。")).toBeInTheDocument();
+    expect(screen.queryByText("追问来源证据 1")).not.toBeInTheDocument();
   });
 
   test("shows API errors in the workspace", async () => {

@@ -1,48 +1,73 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
-  <title id="title">Follow-Up Flow</title>
-  <desc id="desc">Ambiguous resume points and match gaps are reviewed to generate three to five follow-up questions.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1320" viewBox="0 0 1800 1320" role="img" aria-labelledby="title desc">
+  <title id="title">追问模拟与不确定性澄清流程</title>
+  <desc id="desc">从简历模糊点和匹配缺口生成 3-5 条有原因、有证据上下文的追问。</desc>
   <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L0,6 L9,3 z" fill="#8a5c31" />
+    <marker id="arrow-head" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,10 L11,5 z" fill="#A66B3D"/>
     </marker>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#1F2A36" flood-opacity="0.12"/>
+    </filter>
     <style>
-      .bg { fill: #fffaf3; }
-      .box { fill: #ffffff; stroke: #dcc6ad; stroke-width: 2; rx: 8; }
-      .accent { fill: #fff0dc; stroke: #be8752; }
-      .title { font: 700 24px Arial, sans-serif; fill: #172033; }
-      .label { font: 700 17px Arial, sans-serif; fill: #172033; }
-      .note { font: 14px Arial, sans-serif; fill: #4b5870; }
-      .arrow { stroke: #8a5c31; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .bg { fill: #FFFFFF; }
+      .title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 42px; font-weight: 800; fill: #1F2F3A; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 19px; fill: #5B6873; }
+      .section { fill: #EEF3F5; stroke: #AAB8C0; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-warm { fill: #FFF7E8; stroke: #D8AE63; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-green { fill: #ECF6F1; stroke: #87B9A6; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-red { fill: #FFF0EF; stroke: #D58A82; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card { fill: #FFFFFF; stroke: #B7C6CF; stroke-width: 2; filter: url(#soft-shadow); }
+      .card-blue { fill: #F8FBFD; stroke: #78A4C2; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-green { fill: #F6FCF8; stroke: #7DB397; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-warm { fill: #FFFCF4; stroke: #D3A44F; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-red { fill: #FFF8F7; stroke: #D88C83; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 22px; font-weight: 800; fill: #20303A; }
+      .box-title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 21px; font-weight: 800; fill: #20303A; }
+      .label { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 18px; font-weight: 700; fill: #20303A; }
+      .note { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 16px; fill: #46535E; }
+      .tiny { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; fill: #596873; }
+      .tiny-strong { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; font-weight: 800; fill: #2D3D48; }
+      .badge-text { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 14px; font-weight: 800; fill: #26424D; }
+      .footer { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; fill: #6E7A83; }
+      .num { fill: #A66B3D; stroke: #FFFFFF; stroke-width: 2; }
+      .num-text { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 16px; font-weight: 800; fill: #FFFFFF; }
+      .arrow { stroke: #A66B3D; stroke-width: 4; fill: none; marker-end: url(#arrow-head); stroke-linecap: round; stroke-linejoin: round; }
+      .dashed { stroke-dasharray: 10 8; opacity: 0.85; }
+      .thin { stroke: #D1DCE3; stroke-width: 1.2; }
+      .lane { fill: #FFFFFF; stroke: #C8D5DC; stroke-width: 1.6; }
+      .legend-line { stroke: #A66B3D; stroke-width: 4; marker-end: url(#arrow-head); }
     </style>
   </defs>
-  <rect class="bg" width="1120" height="420" rx="16" />
-  <text class="title" x="40" y="48">Follow-Up Simulation</text>
-  <text class="note" x="40" y="76">Follow-ups target uncertainty rather than repeating the main interview questions.</text>
-  <g transform="translate(65 150)">
-    <rect class="box" width="205" height="110" />
-    <text class="label" x="24" y="38">Ambiguities</text>
-    <text class="note" x="24" y="66">missing dates</text>
-    <text class="note" x="24" y="88">unclear ownership</text>
-  </g>
-  <path class="arrow" d="M280 205 H365" />
-  <g transform="translate(375 150)">
-    <rect class="box" width="205" height="110" />
-    <text class="label" x="24" y="38">Gap Reasons</text>
-    <text class="note" x="24" y="66">weak matches</text>
-    <text class="note" x="24" y="88">missing evidence</text>
-  </g>
-  <path class="arrow" d="M590 205 H675" />
-  <g transform="translate(685 150)">
-    <rect class="box accent" width="175" height="110" />
-    <text class="label" x="24" y="38">Risk Review</text>
-    <text class="note" x="24" y="66">prioritize</text>
-    <text class="note" x="24" y="88">clarify</text>
-  </g>
-  <path class="arrow" d="M870 205 H955" />
-  <g transform="translate(965 150)">
-    <rect class="box" width="115" height="110" />
-    <text class="label" x="22" y="38">3-5</text>
-    <text class="note" x="22" y="66">follow-up</text>
-    <text class="note" x="22" y="88">questions</text>
-  </g>
+  <rect class="bg" width="1800" height="1320"/>
+  <text class="title" x="80" y="68">追问模拟与不确定性澄清流程</text>
+  <text class="subtitle" x="80" y="106">从简历模糊点和匹配缺口生成 3-5 条有原因、有证据上下文的追问。</text>
+  <g><rect class="section" x="80" y="140" width="1660" height="128" rx="14" /><text class="section-title" x="108" y="178">输入层：模糊点、缺口项、证据片段</text><text class="tiny" x="108" y="206"><tspan x="108" dy="0">追问模拟聚焦不确定性，不重复主试题；目标是澄清真实性、贡献边界和能力迁移。</tspan></text></g>
+<g><rect class="card-blue" x="120" y="186" width="335" height="70" rx="14" /><text class="box-title" x="144" y="225">candidate.ambiguous_points</text><text class="note" x="144" y="260"><tspan x="144" dy="0">简历中需要补充背景的模糊描述</tspan></text></g>
+<g><rect class="card-blue" x="500" y="186" width="350" height="70" rx="14" /><text class="box-title" x="524" y="225">match.gap_reasons</text><text class="note" x="524" y="260"><tspan x="524" dy="0">未匹配/弱匹配/风险扣分项</tspan></text></g>
+<g><rect class="card-blue" x="895" y="186" width="330" height="70" rx="14" /><text class="box-title" x="919" y="225">evidence_snippets</text><text class="note" x="919" y="260"><tspan x="919" dy="0">首条证据作为追问关联上下文</tspan></text></g>
+<g><rect class="card-blue" x="1270" y="186" width="300" height="70" rx="14" /><text class="box-title" x="1294" y="225">MatchReport</text><text class="note" x="1294" y="260"><tspan x="1294" dy="0">评分后的待确认方向</tspan></text></g>
+<g><rect class="section" x="80" y="310" width="1065" height="760" rx="14" /><text class="section-title" x="108" y="348">主流程：优先澄清风险，再补足基础验证问题</text><text class="tiny" x="108" y="376"><tspan x="108" dy="0">输出为 FollowUpQuestion：question / reason / related_evidence。</tspan></text></g>
+<g><rect class="card" x="130" y="370" width="445" height="122" rx="14" /><circle class="num" cx="158" cy="402" r="18"/><text class="num-text" x="152" y="409">1</text><text class="box-title" x="188" y="409">识别追问来源</text><rect class="" x="353" y="386" width="204" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="367" y="409">uncertainty</text><text class="note" x="154" y="444"><tspan x="154" dy="0">优先读取候选人简历模糊点</tspan><tspan x="154" dy="24">再读取评分缺口 gap_reasons</tspan><tspan x="154" dy="24">两者都来自前序结构化与评分结果</tspan></text></g>
+<g><rect class="card-warm" x="630" y="370" width="470" height="128" rx="14" /><circle class="num" cx="658" cy="402" r="18"/><text class="num-text" x="652" y="409">2</text><text class="box-title" x="688" y="409">模糊点追问</text><rect class="" x="910" y="386" width="172" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="924" y="409">ambiguous</text><text class="note" x="654" y="444"><tspan x="654" dy="0">针对“某段简历描述”补充背景</tspan><tspan x="654" dy="24">要求说明具体职责和可验证结果</tspan><tspan x="654" dy="24">reason 标记为真实性与贡献边界验证</tspan></text></g>
+<g><rect class="card-red" x="130" y="572" width="445" height="138" rx="14" /><circle class="num" cx="158" cy="604" r="18"/><text class="num-text" x="152" y="611">3</text><text class="box-title" x="188" y="611">缺口项追问</text><rect class="" x="437" y="588" width="84" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="451" y="611">gap</text><text class="note" x="154" y="646"><tspan x="154" dy="0">围绕“核心技能缺口、年限不足、硬条件弱匹配”等</tspan><tspan x="154" dy="24">询问是否有未写入简历的经历</tspan><tspan x="154" dy="24">最多补到 5 条，防止追问过长</tspan></text></g>
+<g><rect class="card-blue" x="630" y="572" width="470" height="138" rx="14" /><circle class="num" cx="658" cy="604" r="18"/><text class="num-text" x="652" y="611">4</text><text class="box-title" x="688" y="611">补位验证问题</text><rect class="" x="962" y="588" width="92" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="976" y="611">pads</text><text class="note" x="654" y="646"><tspan x="654" dy="0">若追问不足 3 条，补充项目规模/周期/产出</tspan><tspan x="654" dy="24">补充最困难技术决策与替代方案</tspan><tspan x="654" dy="24">补充能力迁移到当前 JD 的具体案例</tspan></text></g>
+<g><rect class="card-green" x="130" y="792" width="445" height="122" rx="14" /><circle class="num" cx="158" cy="824" r="18"/><text class="num-text" x="152" y="831">5</text><text class="box-title" x="188" y="831">数量与去重控制</text><rect class="" x="437" y="808" width="84" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="451" y="831">3-5</text><text class="note" x="154" y="866"><tspan x="154" dy="0">基础目标：至少 3 条</tspan><tspan x="154" dy="24">最终上限：questions[:5]</tspan><tspan x="154" dy="24">保持追问列表短而有针对性</tspan></text></g>
+<g><rect class="card-green" x="630" y="792" width="470" height="122" rx="14" /><circle class="num" cx="658" cy="824" r="18"/><text class="num-text" x="652" y="831">6</text><text class="box-title" x="688" y="831">关联首条证据</text><rect class="" x="942" y="808" width="140" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="956" y="831">context</text><text class="note" x="654" y="866"><tspan x="654" dy="0">related_evidence = first evidence snippet</tspan><tspan x="654" dy="24">让追问可以回到评分依据</tspan><tspan x="654" dy="24">前端可隐藏证据，报告中仍保留</tspan></text></g>
+<path class="arrow" d="M575 432 L630 432"/>
+<path class="arrow" d="M865 498 V572"/>
+<path class="arrow" d="M575 642 L630 642"/>
+<path class="arrow" d="M355 710 V792"/>
+<path class="arrow" d="M575 852 L630 852"/>
+<g><rect class="section-warm" x="1180" y="310" width="560" height="760" rx="14" /><text class="section-title" x="1208" y="348">右侧面试官视角：追问要回答“为什么问”</text><text class="tiny" x="1208" y="376"><tspan x="1208" dy="0">这些标签帮助解释追问不是随机生成，而是来自前序缺口。</tspan></text></g>
+<g><rect class="card-warm" x="1230" y="370" width="465" height="112" rx="14" /><text class="box-title" x="1254" y="409">真实性验证</text><text class="note" x="1254" y="444"><tspan x="1254" dy="0">项目是否真实发生</tspan><tspan x="1254" dy="24">候选人是否能说出细节、指标、上下游</tspan></text></g>
+<g><rect class="card-warm" x="1230" y="520" width="465" height="112" rx="14" /><text class="box-title" x="1254" y="559">贡献边界验证</text><text class="note" x="1254" y="594"><tspan x="1254" dy="0">个人负责哪一部分</tspan><tspan x="1254" dy="24">是否有主导动作、协作边界、决策依据</tspan></text></g>
+<g><rect class="card-red" x="1230" y="670" width="465" height="112" rx="14" /><text class="box-title" x="1254" y="709">缺口补证</text><text class="note" x="1254" y="744"><tspan x="1254" dy="0">对未匹配/弱匹配要求补充证据</tspan><tspan x="1254" dy="24">若无法补证，面试官可据此降低推进优先级</tspan></text></g>
+<g><rect class="" x="1258" y="822" width="270" height="190" rx="14" fill="#FFFFFF" stroke="#CAD5DC" stroke-width="1.6"/><text class="tiny-strong" x="1274" y="856">来源</text><text class="tiny" x="1374" y="856">生成方式</text><line class="thin" x1="1270" y1="867" x2="1516" y2="867"/><text class="tiny-strong" x="1274" y="890">ambiguous</text><text class="tiny" x="1374" y="890">逐条追问</text><line class="thin" x1="1270" y1="901" x2="1516" y2="901"/><text class="tiny-strong" x="1274" y="924">gap</text><text class="tiny" x="1374" y="924">缺口澄清</text><line class="thin" x1="1270" y1="935" x2="1516" y2="935"/><text class="tiny-strong" x="1274" y="958">pads</text><text class="tiny" x="1374" y="958">不足 3 条时补齐</text><line class="thin" x1="1270" y1="969" x2="1516" y2="969"/><text class="tiny-strong" x="1274" y="992">limit</text><text class="tiny" x="1374" y="992">最多 5 条</text></g>
+<g><rect class="card-green" x="1230" y="988" width="465" height="82" rx="14" /><text class="box-title" x="1254" y="1027">不替代面试官判断</text><text class="note" x="1254" y="1052"><tspan x="1254" dy="0">它提供追问方向，不给最终录用结论</tspan></text></g>
+<g><rect class="section-green" x="80" y="1110" width="1660" height="140" rx="14" /><text class="section-title" x="108" y="1148">输出层：追问模拟页与候选人深挖清单</text><text class="tiny" x="108" y="1176"><tspan x="108" dy="0">最终列表用于面试官二次确认，尤其适合低证据、高风险或简历表达含糊的候选人。</tspan></text></g>
+<g><rect class="card-green" x="125" y="1162" width="350" height="74" rx="14" /><text class="box-title" x="149" y="1201">FollowUpQuestion[]</text><text class="note" x="149" y="1236"><tspan x="149" dy="0">3-5 条追问</tspan></text></g>
+<g><rect class="card-green" x="520" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="544" y="1201">reason</text><text class="note" x="544" y="1236"><tspan x="544" dy="0">说明追问来自模糊点或缺口</tspan></text></g>
+<g><rect class="card-green" x="895" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="919" y="1201">related_evidence</text><text class="note" x="919" y="1236"><tspan x="919" dy="0">关联评分证据片段</tspan></text></g>
+<g><rect class="card-green" x="1270" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="1294" y="1201">面试确认清单</text><text class="note" x="1294" y="1236"><tspan x="1294" dy="0">真实性、贡献、指标、迁移能力</tspan></text></g>
+<text class="footer" x="80" y="1280">代码路径：backend/app/followups/generator.py</text><text class="footer" x="1480" y="1280">静态说明图 / 不参与运行时加载</text>
 </svg>

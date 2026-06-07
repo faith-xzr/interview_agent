@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, settings_from_env
 from app.extraction.document_parser import DocumentParseError, extract_text_from_bytes
@@ -39,7 +40,7 @@ def create_app(settings: Settings = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="JD 内容不能为空，请上传 JD 文件或粘贴 JD 文本。")
         if not resumes:
             raise HTTPException(status_code=400, detail="至少需要一份有效简历内容。")
-        report = pipeline.run(jd_content, resumes)
+        report = await run_in_threadpool(pipeline.run, jd_content, resumes)
         report.warnings.extend(warnings)
         pipeline.storage.save_run(report)
         return report

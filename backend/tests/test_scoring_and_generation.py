@@ -80,7 +80,7 @@ def test_schema_normalizes_common_llm_resume_payload_variants():
     assert candidate.certifications == []
 
 
-def test_score_candidate_uses_thresholds_and_reasons():
+def test_score_candidate_returns_scores_and_reasons_without_decision_threshold():
     jd = JDProfile(
         job_title="高级 Python 后端工程师",
         responsibilities=["负责 RAG 平台和 API 服务建设"],
@@ -120,11 +120,11 @@ def test_score_candidate_uses_thresholds_and_reasons():
     weak_report = score_candidate(jd, weak, ["客服 Excel"])
 
     assert strong_report.total_score >= 75
-    assert strong_report.decision == "推荐推进"
+    assert strong_report.decision == ""
     assert strong_report.dimension_scores["核心技能与工具"] >= 24
     assert strong_report.match_reasons
     assert weak_report.total_score < 60
-    assert weak_report.decision == "暂不推进"
+    assert weak_report.decision == ""
     assert weak_report.gap_reasons
 
 

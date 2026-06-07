@@ -80,7 +80,6 @@ def score_candidate(
     risk_deduction, risk_reasons = _risk_deduction(jd, candidate, requirement_matches)
     total = max(0, min(100, int(round(positive_score - risk_deduction))))
     total = _apply_score_caps(total, jd, requirement_matches)
-    decision = _decision(total, requirement_matches)
 
     match_reasons = _match_reasons(requirement_matches)
     gap_reasons = _gap_reasons(requirement_matches, risk_reasons)
@@ -104,7 +103,7 @@ def score_candidate(
 
     return MatchReport(
         total_score=total,
-        decision=decision,
+        decision="",
         dimension_scores=dimension_scores,
         score_breakdown=breakdown,
         match_reasons=match_reasons,
@@ -590,19 +589,6 @@ def _apply_score_caps(total: int, jd: JDProfile, requirement_matches: List[Requi
     if jd.hard_requirements and hard_unknown:
         total = min(total, 69)
     return total
-
-
-def _decision(total: int, requirement_matches: Optional[List[RequirementMatch]] = None) -> str:
-    hard_gaps = [
-        item
-        for item in requirement_matches or []
-        if item.requirement_type == "hard_requirement" and item.status in {"未匹配", "弱匹配"}
-    ]
-    if total >= 75 and not hard_gaps:
-        return "推荐推进"
-    if total >= 60:
-        return "人工复核"
-    return "暂不推进"
 
 
 def _match_reasons(requirement_matches: List[RequirementMatch]) -> List[str]:

@@ -3,12 +3,32 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
 
 def _optional_env(name: str) -> Optional[str]:
     value = os.getenv(name)
     if value is None or value.strip() == "":
         return None
     return value.strip()
+
+
+def _load_env_file() -> None:
+    if load_dotenv is None:
+        return
+    here = Path(__file__).resolve()
+    seen: set[Path] = set()
+    for parent in [Path.cwd().resolve(), *here.parents]:
+        if parent in seen:
+            continue
+        seen.add(parent)
+        candidate = parent / ".env"
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
+            return
 
 
 @dataclass
@@ -34,6 +54,7 @@ class Settings:
 
 
 def settings_from_env() -> Settings:
+    _load_env_file()
     return Settings(
         data_dir=Path(os.getenv("DATA_DIR", "data")),
         database_path=Path(os.getenv("DATABASE_PATH", "data/recruiting_demo.sqlite3")),

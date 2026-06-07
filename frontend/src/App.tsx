@@ -5,8 +5,8 @@ import { createRun } from "./api";
 import type {
   CandidateReport,
   DimensionExplanation,
-  EvidenceSnippet,
   ExtractedFact,
+  MatchReport,
   RequirementMatch,
   RunReport
 } from "./types";
@@ -190,7 +190,7 @@ export default function App() {
             <div className="card empty-state">
               <span className="eyebrow muted">Awaiting input</span>
               <h2>等待提交材料</h2>
-              <p>提交 JD 与简历后，这里会呈现候选人匹配分数、推进建议、面试题与追问。</p>
+              <p>提交 JD 与简历后，这里会呈现候选人匹配分数、关键依据、面试题与追问。</p>
             </div>
           )}
         </section>
@@ -311,10 +311,6 @@ function RunSummary({ report }: { report: RunReport }) {
         <span className="muted">候选人</span>
         <strong>{report.candidates.length} 人</strong>
       </div>
-      <div>
-        <span className="muted">必备技能</span>
-        <strong>{report.jd_profile.required_skills.join(" · ") || "未识别"}</strong>
-      </div>
     </div>
   );
 }
@@ -340,10 +336,7 @@ function CandidateRanking({
           <span className="rank-number">{String(index + 1).padStart(2, "0")}</span>
           <span className="candidate-main">
             <strong>{candidate.profile.name}</strong>
-            <small>{candidate.match_report.match_reasons[0]}</small>
-          </span>
-          <span className={`decision ${decisionClass(candidate.match_report.decision)}`}>
-            {candidate.match_report.decision}
+            <small>{candidateSummary(candidate.match_report)}</small>
           </span>
           <span className="score">{candidate.match_report.total_score}</span>
         </button>
@@ -366,7 +359,6 @@ function CandidateOverview({
       <header className="view-header">
         <div>
           <h2>候选人总览</h2>
-          <p>仅呈现推进建议与匹配分数；点击任一行查看完整解析。</p>
         </div>
         <span className="view-meta">{candidates.length} 位候选人</span>
       </header>
@@ -381,11 +373,6 @@ function CandidateOverview({
             <span className="rank-number">{String(index + 1).padStart(2, "0")}</span>
             <span className="overview-main">
               <strong>{candidate.profile.name}</strong>
-              <small>{candidate.source_name}</small>
-              <span>{candidate.match_report.match_reasons[0]}</span>
-            </span>
-            <span className={`decision ${decisionClass(candidate.match_report.decision)}`}>
-              {candidate.match_report.decision}
             </span>
             <span className="overview-score">{candidate.match_report.total_score}</span>
           </button>
@@ -414,7 +401,7 @@ function CandidateDetail({
         </div>
         <div className="score-block">
           <span>{report.total_score}</span>
-          <strong>{report.decision}</strong>
+          <strong>匹配分</strong>
         </div>
       </header>
 
@@ -538,7 +525,6 @@ function ResumeExtractionColumn({ groups }: { groups: FactGroup[] }) {
 function FactSection({ group }: { group: FactGroup }) {
   const skillFacts = group.facts.filter((fact) => fact.fact_type === "skill");
   const otherFacts = group.facts.filter((fact) => fact.fact_type !== "skill").slice(0, 4);
-  const skillEvidence = skillFacts[0];
   return (
     <section className="fact-section">
       <div className="fact-section-header">
@@ -548,8 +534,7 @@ function FactSection({ group }: { group: FactGroup }) {
       {skillFacts.length ? (
         <article className="fact-row compact-skill-row">
           <div className="fact-row-top">
-            <span className="fact-type">skill</span>
-            <span className="fact-confidence">{Math.round(Math.max(...skillFacts.map((fact) => fact.confidence)) * 100)}%</span>
+            <span className="fact-type">专业技能</span>
           </div>
           <div className="skill-chip-list">
             {skillFacts.map((fact) => (
@@ -558,8 +543,6 @@ function FactSection({ group }: { group: FactGroup }) {
               </span>
             ))}
           </div>
-          {skillEvidence ? <p>{skillEvidence.evidence}</p> : null}
-          {skillEvidence ? <span className="fact-meta">{formatFactMeta(skillEvidence)}</span> : null}
         </article>
       ) : null}
       {otherFacts.map((fact, index) => (
@@ -573,12 +556,9 @@ function FactRow({ fact }: { fact: ExtractedFact }) {
   return (
     <article className="fact-row">
       <div className="fact-row-top">
-        <span className="fact-type">{fact.fact_type}</span>
-        <span className="fact-confidence">{Math.round(fact.confidence * 100)}%</span>
+        <span className="fact-type">{factDisplayLabel(fact)}</span>
       </div>
       <strong>{fact.value}</strong>
-      <p>{fact.evidence}</p>
-      <span className="fact-meta">{formatFactMeta(fact)}</span>
     </article>
   );
 }
@@ -631,19 +611,12 @@ function ScoreExplanation({
 }
 
 function RequirementMatchRow({ item }: { item: RequirementMatch }) {
-  const evidence = item.evidence[0];
   return (
     <article className="requirement-row">
       <div className="requirement-main">
         <span className="dimension-label">{item.dimension}</span>
         <strong>{item.requirement}</strong>
         <p>{item.reason}</p>
-        {evidence ? (
-          <blockquote className="inline-evidence">
-            <strong>{formatEvidenceMeta(evidence)}</strong>
-            <span>{evidence.text}</span>
-          </blockquote>
-        ) : null}
       </div>
       <div className="requirement-score">
         <span className={`status-pill ${statusClass(item.status)}`}>{item.status}</span>
@@ -663,17 +636,25 @@ function List({ items }: { items: string[] }) {
   );
 }
 
-function decisionClass(decision: string) {
-  if (decision === "推荐推进") return "go";
-  if (decision === "人工复核") return "review";
-  return "stop";
-}
-
 function statusClass(status: string) {
   if (status === "强匹配" || status === "直接匹配") return "strong";
   if (status === "相关匹配") return "related";
   if (status === "弱匹配") return "weak";
   return "missing";
+}
+
+function candidateSummary(report: MatchReport) {
+  if (shouldPreferGapSummary(report)) {
+    return report.gap_reasons[0] ?? "暂未识别到明确匹配依据";
+  }
+  return report.match_reasons[0] ?? report.gap_reasons[0] ?? "暂未识别到明确匹配依据";
+}
+
+function shouldPreferGapSummary(report: MatchReport) {
+  const hasStrongEvidence = report.requirement_matches.some(
+    (item) => (item.status === "强匹配" || item.status === "直接匹配") && item.contribution > 0
+  );
+  return report.total_score < 60 || !hasStrongEvidence;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -688,23 +669,50 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const SECTION_ORDER = ["basic", "education", "experience", "projects", "skills", "summary", "certifications"];
+const HIDDEN_RESUME_FACT_TYPES = new Set(["target_role", "location", "contact", "phone", "email"]);
+const FACT_LABELS: Record<string, string> = {
+  required_skill: "必备技能",
+  nice_to_have_skill: "加分项",
+  responsibility: "核心职责",
+  years_required: "年限要求",
+  seniority: "级别要求",
+  industry: "行业背景",
+  hard_requirement: "硬性要求",
+  education_summary: "学历背景",
+  education: "学历背景",
+  degree: "学历背景",
+  work_summary: "核心工作",
+  experience: "工作经历",
+  experience_position: "任职信息",
+  project: "项目经验",
+  skill: "专业技能",
+  certification: "证书资质",
+  highlight: "亮点",
+  summary: "亮点",
+  metric: "量化成果",
+  domain_evidence: "领域证据",
+  risk: "风险点"
+};
 
 function groupResumeFacts(facts: ExtractedFact[]): FactGroup[] {
   const bySection = new Map<string, ExtractedFact[]>();
-  for (const fact of facts) {
+  for (const fact of facts.filter(isVisibleResumeFact)) {
     const section = fact.section || "unknown";
     bySection.set(section, [...(bySection.get(section) ?? []), fact]);
   }
   return [...bySection.entries()]
-    .map(([section, sectionFacts]) => ({ section, facts: sortFactsWithinSection(sectionFacts).slice(0, 6) }))
+    .map(([section, sectionFacts]) => ({ section, facts: compactFactsForSection(section, sortFactsWithinSection(sectionFacts)) }))
+    .filter((group) => group.facts.length > 0)
     .sort((left, right) => sectionRank(left.section) - sectionRank(right.section));
 }
 
 function sortFactsWithinSection(facts: ExtractedFact[]) {
   const rank: Record<string, number> = {
-    experience_position: 1,
+    education_summary: 1,
+    work_summary: 1,
     project: 1,
     responsibility: 2,
+    experience_position: 3,
     education: 2,
     degree: 3,
     skill: 4,
@@ -716,6 +724,30 @@ function sortFactsWithinSection(facts: ExtractedFact[]) {
   return [...facts].sort((left, right) => (rank[left.fact_type] ?? 99) - (rank[right.fact_type] ?? 99));
 }
 
+function compactFactsForSection(section: string, facts: ExtractedFact[]) {
+  if (section === "education") {
+    return facts.filter((fact) => fact.fact_type === "education_summary" || fact.fact_type === "education").slice(0, 1);
+  }
+  if (section === "experience") {
+    const richerFacts = facts.filter((fact) => fact.fact_type === "work_summary" || fact.fact_type === "responsibility");
+    const displayFacts = richerFacts.length ? richerFacts : facts;
+    return displayFacts.slice(0, 4);
+  }
+  return facts.slice(0, 6);
+}
+
+function isVisibleResumeFact(fact: ExtractedFact) {
+  return fact.section !== "basic" && !HIDDEN_RESUME_FACT_TYPES.has(fact.fact_type);
+}
+
+function factDisplayLabel(fact: ExtractedFact) {
+  return FACT_LABELS[fact.fact_type] ?? (containsChinese(fact.fact_type) ? fact.fact_type : "关键事实");
+}
+
+function containsChinese(value: string) {
+  return /[\u4e00-\u9fa5]/.test(value);
+}
+
 function sectionRank(section: string) {
   const index = SECTION_ORDER.indexOf(section);
   return index === -1 ? 99 : index;
@@ -723,14 +755,4 @@ function sectionRank(section: string) {
 
 function formatScore(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function formatEvidenceMeta(evidence: EvidenceSnippet) {
-  const line = evidence.line_start ? `第 ${evidence.line_start} 行` : "原文证据";
-  return `${evidence.source} · ${line}`;
-}
-
-function formatFactMeta(fact: ExtractedFact) {
-  const line = fact.line_start ? `第 ${fact.line_start} 行` : "无行号";
-  return `${fact.section} · ${line} · ${fact.extractor}`;
 }

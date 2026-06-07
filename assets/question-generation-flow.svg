@@ -1,48 +1,72 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
-  <title id="title">Question Generation Flow</title>
-  <desc id="desc">JD profile, candidate profile, and match evidence generate at least ten interview questions with focus and scoring criteria.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1320" viewBox="0 0 1800 1320" role="img" aria-labelledby="title desc">
+  <title id="title">面试试题生成流程</title>
+  <desc id="desc">基于岗位要求、候选人证据和匹配报告生成 10+ 道可评分面试题。</desc>
   <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L0,6 L9,3 z" fill="#6a4a8f" />
+    <marker id="arrow-head" markerWidth="12" markerHeight="12" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,10 L11,5 z" fill="#7B5AA6"/>
     </marker>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#1F2A36" flood-opacity="0.12"/>
+    </filter>
     <style>
-      .bg { fill: #fbf8ff; }
-      .box { fill: #ffffff; stroke: #cab9dc; stroke-width: 2; rx: 8; }
-      .accent { fill: #f1e9fb; stroke: #9272b8; }
-      .title { font: 700 24px Arial, sans-serif; fill: #172033; }
-      .label { font: 700 17px Arial, sans-serif; fill: #172033; }
-      .note { font: 14px Arial, sans-serif; fill: #4b5870; }
-      .arrow { stroke: #6a4a8f; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .bg { fill: #FFFFFF; }
+      .title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 42px; font-weight: 800; fill: #1F2F3A; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 19px; fill: #5B6873; }
+      .section { fill: #EEF3F5; stroke: #AAB8C0; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-warm { fill: #FFF7E8; stroke: #D8AE63; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-green { fill: #ECF6F1; stroke: #87B9A6; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-red { fill: #FFF0EF; stroke: #D58A82; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card { fill: #FFFFFF; stroke: #B7C6CF; stroke-width: 2; filter: url(#soft-shadow); }
+      .card-blue { fill: #F8FBFD; stroke: #78A4C2; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-green { fill: #F6FCF8; stroke: #7DB397; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-warm { fill: #FFFCF4; stroke: #D3A44F; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .card-red { fill: #FFF8F7; stroke: #D88C83; stroke-width: 2.2; filter: url(#soft-shadow); }
+      .section-title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 22px; font-weight: 800; fill: #20303A; }
+      .box-title { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 21px; font-weight: 800; fill: #20303A; }
+      .label { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 18px; font-weight: 700; fill: #20303A; }
+      .note { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 16px; fill: #46535E; }
+      .tiny { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; fill: #596873; }
+      .tiny-strong { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; font-weight: 800; fill: #2D3D48; }
+      .badge-text { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 14px; font-weight: 800; fill: #26424D; }
+      .footer { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 13px; fill: #6E7A83; }
+      .num { fill: #7B5AA6; stroke: #FFFFFF; stroke-width: 2; }
+      .num-text { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; font-size: 16px; font-weight: 800; fill: #FFFFFF; }
+      .arrow { stroke: #7B5AA6; stroke-width: 4; fill: none; marker-end: url(#arrow-head); stroke-linecap: round; stroke-linejoin: round; }
+      .dashed { stroke-dasharray: 10 8; opacity: 0.85; }
+      .thin { stroke: #D1DCE3; stroke-width: 1.2; }
+      .lane { fill: #FFFFFF; stroke: #C8D5DC; stroke-width: 1.6; }
+      .legend-line { stroke: #7B5AA6; stroke-width: 4; marker-end: url(#arrow-head); }
     </style>
   </defs>
-  <rect class="bg" width="1120" height="420" rx="16" />
-  <text class="title" x="40" y="48">Interview Question Generation</text>
-  <text class="note" x="40" y="76">Questions are grounded in JD requirements, candidate facts, and match evidence.</text>
-  <g transform="translate(70 150)">
-    <rect class="box" width="190" height="110" />
-    <text class="label" x="24" y="38">JD Profile</text>
-    <text class="note" x="24" y="66">role / skills</text>
-    <text class="note" x="24" y="88">responsibilities</text>
-  </g>
-  <path class="arrow" d="M270 205 H355" />
-  <g transform="translate(365 150)">
-    <rect class="box" width="210" height="110" />
-    <text class="label" x="24" y="38">Candidate Profile</text>
-    <text class="note" x="24" y="66">projects / skills</text>
-    <text class="note" x="24" y="88">highlights</text>
-  </g>
-  <path class="arrow" d="M585 205 H670" />
-  <g transform="translate(680 150)">
-    <rect class="box accent" width="190" height="110" />
-    <text class="label" x="24" y="38">Match Report</text>
-    <text class="note" x="24" y="66">evidence snippets</text>
-    <text class="note" x="24" y="88">gap reasons</text>
-  </g>
-  <path class="arrow" d="M880 205 H965" />
-  <g transform="translate(975 150)">
-    <rect class="box" width="110" height="110" />
-    <text class="label" x="22" y="38">10+</text>
-    <text class="note" x="22" y="66">questions</text>
-    <text class="note" x="22" y="88">criteria</text>
-  </g>
+  <rect class="bg" width="1800" height="1320"/>
+  <text class="title" x="80" y="68">面试试题生成流程</text>
+  <text class="subtitle" x="80" y="106">基于岗位要求、候选人证据和匹配报告生成 10+ 道可评分面试题。</text>
+  <g><rect class="section" x="80" y="140" width="1660" height="128" rx="14" /><text class="section-title" x="108" y="178">输入层：岗位画像、候选人画像、匹配报告</text><text class="tiny" x="108" y="206"><tspan x="108" dy="0">试题不是随机题库，而是由 JD 技能、候选人项目、匹配证据共同驱动。</tspan></text></g>
+<g><rect class="card-blue" x="120" y="186" width="310" height="70" rx="14" /><text class="box-title" x="144" y="225">JDProfile</text><text class="note" x="144" y="260"><tspan x="144" dy="0">岗位名、seniority、required_skills</tspan></text></g>
+<g><rect class="card-blue" x="470" y="186" width="350" height="70" rx="14" /><text class="box-title" x="494" y="225">CandidateProfile</text><text class="note" x="494" y="260"><tspan x="494" dy="0">候选人技能、项目、亮点</tspan></text></g>
+<g><rect class="card-blue" x="860" y="186" width="360" height="70" rx="14" /><text class="box-title" x="884" y="225">MatchReport</text><text class="note" x="884" y="260"><tspan x="884" dy="0">证据片段、匹配理由、缺口</tspan></text></g>
+<g><rect class="card-blue" x="1260" y="186" width="305" height="70" rx="14" /><text class="box-title" x="1284" y="225">演示约束</text><text class="note" x="1284" y="260"><tspan x="1284" dy="0">本地规则可跑，无需 LLM</tspan></text></g>
+<g><rect class="section" x="80" y="310" width="1065" height="760" rx="14" /><text class="section-title" x="108" y="348">主流程：从匹配证据生成结构化面试题</text><text class="tiny" x="108" y="376"><tspan x="108" dy="0">所有题目输出为 InterviewQuestion：question / focus / difficulty / scoring_criteria / evidence。</tspan></text></g>
+<g><rect class="card" x="130" y="370" width="445" height="116" rx="14" /><circle class="num" cx="158" cy="402" r="18"/><text class="num-text" x="152" y="409">1</text><text class="box-title" x="188" y="409">确定题目难度</text><rect class="" x="369" y="386" width="188" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="383" y="409">difficulty</text><text class="note" x="154" y="444"><tspan x="154" dy="0">seniority 为高级/资深/专家/负责人：高级</tspan><tspan x="154" dy="24">其他默认中级；通用题可覆盖初/中/高级</tspan></text></g>
+<g><rect class="card-blue" x="630" y="370" width="470" height="132" rx="14" /><circle class="num" cx="658" cy="402" r="18"/><text class="num-text" x="652" y="409">2</text><text class="box-title" x="688" y="409">核心技能深挖题</text><rect class="" x="862" y="386" width="220" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="876" y="409">top 5 skills</text><text class="note" x="654" y="444"><tspan x="654" dy="0">优先使用 JD required_skills</tspan><tspan x="654" dy="24">若 JD 未列技能，则回退到 candidate.skills</tspan><tspan x="654" dy="24">问题要求结合最近项目说明真实业务应用</tspan></text></g>
+<g><rect class="card-warm" x="130" y="568" width="445" height="128" rx="14" /><circle class="num" cx="158" cy="600" r="18"/><text class="num-text" x="152" y="607">3</text><text class="box-title" x="188" y="607">项目复盘题</text><rect class="" x="417" y="584" width="140" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="431" y="607">project</text><text class="note" x="154" y="642"><tspan x="154" dy="0">若候选人有项目，选择第一个项目追问</tspan><tspan x="154" dy="24">重点验证个人负责范围、架构难点、可衡量结果</tspan></text></g>
+<g><rect class="card-blue" x="630" y="568" width="470" height="128" rx="14" /><circle class="num" cx="658" cy="600" r="18"/><text class="num-text" x="652" y="607">4</text><text class="box-title" x="688" y="607">岗位场景题</text><rect class="" x="926" y="584" width="156" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="940" y="607">scenario</text><text class="note" x="654" y="642"><tspan x="654" dy="0">围绕岗位名构造“两周交付 MVP”问题</tspan><tspan x="654" dy="24">观察业务拆解、优先级、风险识别、验收口径</tspan></text></g>
+<g><rect class="card" x="130" y="770" width="445" height="146" rx="14" /><circle class="num" cx="158" cy="802" r="18"/><text class="num-text" x="152" y="809">5</text><text class="box-title" x="188" y="809">通用能力题库</text><rect class="" x="437" y="786" width="92" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="451" y="809">bank</text><text class="note" x="154" y="844"><tspan x="154" dy="0">线上问题排查、技术方案上线评估</tspan><tspan x="154" dy="24">业务需求与成本冲突、协作分歧</tspan><tspan x="154" dy="24">新技术落地、岗位失败风险预判</tspan></text></g>
+<g><rect class="card-green" x="630" y="786" width="470" height="128" rx="14" /><circle class="num" cx="658" cy="818" r="18"/><text class="num-text" x="652" y="825">6</text><text class="box-title" x="688" y="825">组装与数量控制</text><rect class="" x="962" y="802" width="84" height="34" rx="14" fill="#EAF4F1" stroke="#71A99A" stroke-width="1.8"/><text class="badge-text" x="976" y="825">10+</text><text class="note" x="654" y="860"><tspan x="654" dy="0">每题绑定首条 evidence 或项目原文</tspan><tspan x="654" dy="24">返回 questions[: max(10, len(questions))]</tspan><tspan x="654" dy="24">保证至少 10 道可展示题</tspan></text></g>
+<path class="arrow" d="M575 428 L630 428"/>
+<path class="arrow" d="M865 502 V568"/>
+<path class="arrow" d="M575 632 L630 632"/>
+<path class="arrow" d="M355 696 V770"/>
+<path class="arrow" d="M575 842 L630 842"/>
+<g><rect class="section-warm" x="1180" y="310" width="560" height="760" rx="14" /><text class="section-title" x="1208" y="348">右侧质量口径：题目要能被评价</text><text class="tiny" x="1208" y="376"><tspan x="1208" dy="0">每道题同时包含考察点和评分标准，便于面试官直接使用。</tspan></text></g>
+<g><rect class="card-warm" x="1230" y="370" width="465" height="142" rx="14" /><text class="box-title" x="1254" y="409">评分标准模板</text><text class="note" x="1254" y="444"><tspan x="1254" dy="0">优秀回答应包含：业务背景、技术选型、关键实现</tspan><tspan x="1254" dy="24">权衡取舍、协作边界、监控回滚、量化结果</tspan></text></g>
+<g><rect class="card-green" x="1230" y="552" width="465" height="124" rx="14" /><text class="box-title" x="1254" y="591">证据关联策略</text><text class="note" x="1254" y="626"><tspan x="1254" dy="0">技能题使用 match.evidence_snippets[0]</tspan><tspan x="1254" dy="24">项目题直接使用候选人项目原文</tspan><tspan x="1254" dy="24">无证据时 evidence 可为空但题目仍生成</tspan></text></g>
+<g><rect class="" x="1258" y="718" width="270" height="190" rx="14" fill="#FFFFFF" stroke="#CAD5DC" stroke-width="1.6"/><text class="tiny-strong" x="1274" y="752">输出字段</text><text class="tiny" x="1374" y="752">说明</text><line class="thin" x1="1270" y1="763" x2="1516" y2="763"/><text class="tiny-strong" x="1274" y="786">question</text><text class="tiny" x="1374" y="786">候选人看到的问题</text><line class="thin" x1="1270" y1="797" x2="1516" y2="797"/><text class="tiny-strong" x="1274" y="820">focus</text><text class="tiny" x="1374" y="820">面试官考察点</text><line class="thin" x1="1270" y1="831" x2="1516" y2="831"/><text class="tiny-strong" x="1274" y="854">difficulty</text><text class="tiny" x="1374" y="854">初级/中级/高级</text><line class="thin" x1="1270" y1="865" x2="1516" y2="865"/><text class="tiny-strong" x="1274" y="888">criteria</text><text class="tiny" x="1374" y="888">评分依据</text></g>
+<g><rect class="card-red" x="1230" y="934" width="465" height="92" rx="14" /><text class="box-title" x="1254" y="973">非 Agent 流程</text><text class="note" x="1254" y="1008"><tspan x="1254" dy="0">当前为确定性生成器，不做多轮自主规划</tspan></text></g>
+<g><rect class="section-green" x="80" y="1110" width="1660" height="140" rx="14" /><text class="section-title" x="108" y="1148">输出层：试题生成页与 JSON 报告</text><text class="tiny" x="108" y="1176"><tspan x="108" dy="0">输出可直接在前端展示，也随 RunReport 导出。</tspan></text></g>
+<g><rect class="card-green" x="125" y="1162" width="350" height="74" rx="14" /><text class="box-title" x="149" y="1201">InterviewQuestion[]</text><text class="note" x="149" y="1236"><tspan x="149" dy="0">10+ 道结构化题目</tspan></text></g>
+<g><rect class="card-green" x="520" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="544" y="1201">focus</text><text class="note" x="544" y="1236"><tspan x="544" dy="0">技能深度、项目真实性、系统分析</tspan></text></g>
+<g><rect class="card-green" x="895" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="919" y="1201">scoring_criteria</text><text class="note" x="919" y="1236"><tspan x="919" dy="0">可评价、可复盘的回答标准</tspan></text></g>
+<g><rect class="card-green" x="1270" y="1162" width="330" height="74" rx="14" /><text class="box-title" x="1294" y="1201">evidence</text><text class="note" x="1294" y="1236"><tspan x="1294" dy="0">来源证据仅后台/报告保留</tspan></text></g>
+<text class="footer" x="80" y="1280">代码路径：backend/app/question_generation/generator.py</text><text class="footer" x="1480" y="1280">静态说明图 / 不参与运行时加载</text>
 </svg>

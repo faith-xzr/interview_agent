@@ -1,4 +1,4 @@
-.PHONY: install backend frontend dev demo status test
+.PHONY: install backend frontend dev demo status stop restart test
 
 BACKEND_HOST ?= 127.0.0.1
 BACKEND_PORT ?= 8000
@@ -44,6 +44,27 @@ status:
 	else \
 		echo "  [down] port $(FRONTEND_PORT) is not listening"; \
 	fi
+
+stop:
+	@echo "Stopping backend/frontend listeners..."
+	@for port in $(BACKEND_PORT) $(FRONTEND_PORT); do \
+		pids=$$(lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true); \
+		if [ -n "$$pids" ]; then \
+			echo "  stopping port $$port: $$pids"; \
+			kill $$pids 2>/dev/null || true; \
+			sleep 1; \
+			remaining=$$(lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true); \
+			if [ -n "$$remaining" ]; then \
+				echo "  force stopping port $$port: $$remaining"; \
+				kill -9 $$remaining 2>/dev/null || true; \
+			fi; \
+		else \
+			echo "  port $$port is free"; \
+		fi; \
+	done
+
+restart: stop
+	$(MAKE) dev
 
 test:
 	PYTHONPATH=backend .venv/bin/python -m pytest backend/tests -q
