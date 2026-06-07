@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.config import Settings
 from app.extraction.jd_extractor import extract_jd_facts
+from app.extraction.postprocessor import postprocess_extraction
 from app.extraction.resume_extractor import extract_resume_profile
 from app.fallback_ai import extract_jd_profile
 from app.followups import generate_followups
@@ -26,8 +27,7 @@ class RecruitingPipeline:
     def run(self, jd_text: str, resumes: List[Tuple[str, str]]) -> RunReport:
         run_id = uuid4().hex
         warnings: List[str] = []
-        jd_profile = self._extract_jd(jd_text, warnings)
-        jd_extraction_facts = extract_jd_facts(jd_text, jd_profile)
+        jd_profile, jd_extraction_facts = self._extract_jd(jd_text, warnings)
         query_text = " ".join(jd_profile.required_skills + jd_profile.responsibilities + [jd_profile.job_title])
         candidates: List[CandidateReport] = []
 
@@ -65,19 +65,17 @@ class RecruitingPipeline:
     def get_run(self, run_id: str) -> RunReport:
         return self.storage.get_run(run_id)
 
-    def _extract_jd(self, text: str, warnings: List[str]) -> JDProfile:
-        llm_payload = self.llm.complete_json(
-            "你是招聘 JD 结构化解析助手，只输出 JSON。",
-            f"请解析以下 JD，字段包括 job_title responsibilities required_skills nice_to_have_skills seniority years_required industry_background hard_requirements。\n{text}",
+    def _extract_jd(self, text: str, warnings: List[str]) -> Tuple[JDProfile, List[ExtractedFact]]:
+        initial_profile = extract_jd_profile(text)
+        initial_facts = extract_jd_facts(text, initial_profile)
+        return postprocess_extraction(
+            llm=self.llm,
+            text=text,
+            profile=initial_profile,
+            facts=initial_facts,
+            warnings=warnings,
+            label="JD",
         )
-        if llm_payload:
-            try:
-                return JDProfile.model_validate(llm_payload)
-            except Exception:
-                warnings.append("LLM JD 解析结果结构不合法，已使用本地规则兜底。")
-        elif self.llm.available:
-            warnings.append("LLM JD 解析失败，已使用本地规则兜底。")
-        return extract_jd_profile(text)
 
     def _extract_candidate(
         self, text: str, source_name: str, warnings: List[str]
@@ -85,22 +83,22 @@ class RecruitingPipeline:
         initial_result = extract_resume_profile(text, source_name)
         initial_profile = initial_result.profile
         masked = mask_pii(text, candidate_name=initial_profile.name)
-        llm_payload = self.llm.complete_json(
-            "你是简历结构化解析助手，只输出 JSON。",
-            "请解析以下已脱敏简历，字段包括 name target_role contacts location education work_experiences projects skills certifications highlights risk_points ambiguous_points。\n"
-            + masked.text,
+        processed_profile, processed_facts = postprocess_extraction(
+            llm=self.llm,
+            text=masked.text,
+            profile=initial_profile,
+            facts=initial_result.facts,
+            warnings=warnings,
+            label=source_name,
         )
-        if llm_payload:
-            try:
-                restored = restore_pii_in_data(llm_payload, masked.replacements)
-                profile = CandidateProfile.model_validate(restored)
-                profile = _merge_candidate_profile(profile, initial_profile)
-                return profile, initial_result.facts
-            except Exception:
-                warnings.append(f"{source_name} 的 LLM 简历解析结果结构不合法，已使用本地规则兜底。")
-        elif self.llm.available:
-            warnings.append(f"{source_name} 的 LLM 简历解析失败，已使用本地规则兜底。")
-        return initial_profile, initial_result.facts
+        restored_profile = restore_pii_in_data(processed_profile.model_dump(mode="json"), masked.replacements)
+        restored_facts = restore_pii_in_data(
+            [fact.model_dump(mode="json") for fact in processed_facts],
+            masked.replacements,
+        )
+        profile = CandidateProfile.model_validate(restored_profile)
+        extraction_facts = [ExtractedFact.model_validate(fact) for fact in restored_facts]
+        return _merge_candidate_profile(profile, initial_profile), extraction_facts
 
 
 def _merge_candidate_profile(profile: CandidateProfile, fallback: CandidateProfile) -> CandidateProfile:

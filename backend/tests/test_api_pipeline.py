@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.pipeline import RecruitingPipeline
 
 
 def make_client(tmp_path):
@@ -17,6 +18,16 @@ def make_client(tmp_path):
         llm_model="demo-offline",
     )
     return TestClient(create_app(settings))
+
+
+class QueueLLM:
+    available = True
+
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+
+    def complete_json(self, system_prompt: str, user_prompt: str):
+        return self.payloads.pop(0)
 
 
 def test_run_pipeline_without_llm_returns_ranked_report_and_export(tmp_path):
@@ -130,6 +141,74 @@ Python | SQL | RAG | Agent 编排
     assert any(fact["section"] == "summary" for fact in facts)
     assert any(fact["section"] == "projects" for fact in facts)
     assert any(fact["section"] == "skills" and fact["value"] == "Agent 编排" for fact in facts)
+
+
+def test_pipeline_applies_llm_postprocessing_to_jd_and_resume(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = "AI产品经理，负责 Agent 应用落地，要求 Agent 编排经验。"
+    resume_text = """
+小周
+【项目经验】
+• 企业级智能助手项目：负责 RAG 召回评估和上线验收。
+【专业技能】
+Agent 编排 | RAG
+"""
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "profile": {
+                    "job_title": "AI产品经理",
+                    "required_skills": ["Agent 编排"],
+                    "responsibilities": ["负责 Agent 应用落地"],
+                },
+                "facts": [
+                    {
+                        "fact_type": "required_skill",
+                        "value": "Agent 编排",
+                        "evidence": "AI产品经理，负责 Agent 应用落地，要求 Agent 编排经验。",
+                        "section": "jd",
+                        "line_start": 1,
+                        "line_end": 1,
+                        "confidence": 0.91,
+                        "extractor": "llm_postprocess",
+                    }
+                ],
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "projects": ["企业级智能助手项目：负责 RAG 召回评估和上线验收。"],
+                    "skills": ["Agent 编排"],
+                },
+                "facts": [
+                    {
+                        "fact_type": "project",
+                        "value": "企业级智能助手项目",
+                        "evidence": "• 企业级智能助手项目：负责 RAG 召回评估和上线验收。",
+                        "section": "projects",
+                        "line_start": 4,
+                        "line_end": 4,
+                        "confidence": 0.88,
+                        "extractor": "llm_postprocess",
+                    }
+                ],
+            },
+        ]
+    )
+
+    report = pipeline.run(jd_text, [("小周.txt", resume_text)])
+
+    assert any(fact.extractor == "llm_postprocess" for fact in report.jd_extraction_facts)
+    assert any(fact.extractor == "llm_postprocess" for fact in report.candidates[0].extraction_facts)
 
 
 def test_run_pipeline_accepts_jd_text_with_resume_file_only(tmp_path):
