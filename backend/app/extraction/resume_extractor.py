@@ -34,17 +34,26 @@ SECTION_HEADERS = {
     "求职意向": "basic",
     "教育经历": "education",
     "教育背景": "education",
+    "学历背景": "education",
+    "学习经历": "education",
     "工作经历": "experience",
     "工作经验": "experience",
     "职业经历": "experience",
+    "实习经历": "experience",
+    "实习经验": "experience",
     "项目经历": "projects",
     "项目经验": "projects",
+    "项目实践": "projects",
     "专业技能": "skills",
     "技能": "skills",
     "技能清单": "skills",
     "证书": "certifications",
     "资格证书": "certifications",
+    "证书资质": "certifications",
     "自我评价": "summary",
+    "个人评价": "summary",
+    "个人总结": "summary",
+    "个人优势": "summary",
 }
 
 METRIC_RE = re.compile(
@@ -84,6 +93,7 @@ def extract_resume_profile(text: str, source_name: str = "简历") -> ResumeExtr
     experience_entries = _apply_experience_section(profile, facts, sections.get("experience", []))
     _apply_project_section(profile, facts, sections.get("projects", []))
     _apply_skills_section(profile, facts, sections.get("skills", []))
+    _apply_summary_section(profile, facts, sections.get("summary", []))
     _apply_certification_section(profile, facts, sections.get("certifications", []))
     facts.extend(_extract_metric_facts(sections))
     facts.extend(_extract_ai_evidence_facts(sections))
@@ -113,8 +123,17 @@ def split_resume_sections(text: str) -> Dict[str, List[ResumeLine]]:
 
 
 def _match_section_header(text: str) -> Optional[str]:
-    normalized = text.strip().strip(":：")
+    normalized = _normalize_header_text(text)
     return SECTION_HEADERS.get(normalized)
+
+
+def _normalize_header_text(text: str) -> str:
+    normalized = text.strip()
+    normalized = re.sub(r"^[【\[\(（]+", "", normalized)
+    normalized = re.sub(r"[】\]\)）]+$", "", normalized)
+    normalized = normalized.strip().strip(":：")
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
 
 
 def _apply_basic_section(profile: CandidateProfile, facts: List[ExtractedFact], lines: List[ResumeLine]) -> None:
@@ -214,6 +233,16 @@ def _apply_skills_section(profile: CandidateProfile, facts: List[ExtractedFact],
             facts.append(_fact("skill", skill, line, "skills", confidence=0.9))
     if skills:
         profile.skills = unique_preserve_order(profile.skills + skills)
+
+
+def _apply_summary_section(profile: CandidateProfile, facts: List[ExtractedFact], lines: List[ResumeLine]) -> None:
+    if not lines:
+        return
+    highlights = [_strip_bullet(line.text) for line in lines if _strip_bullet(line.text)]
+    if highlights:
+        profile.highlights = unique_preserve_order(profile.highlights + highlights)[:8]
+    for line, value in zip(lines, highlights):
+        facts.append(_fact("summary", value, line, "summary", confidence=0.8))
 
 
 def _apply_certification_section(profile: CandidateProfile, facts: List[ExtractedFact], lines: List[ResumeLine]) -> None:

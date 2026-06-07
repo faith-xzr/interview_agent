@@ -46,3 +46,29 @@ def test_section_aware_extractor_emits_evidence_backed_facts():
         for fact in result.facts
     )
     assert any("起止时间" in item for item in result.profile.ambiguous_points)
+
+
+def test_section_split_supports_decorated_resume_headers():
+    text = """
+小周
+求职意向：AI产品经理 / Agent 应用架构师
+【个人评价】
+• 精通 Agent 编排与 RAG 链路设计，曾主导多个企业级智能助手从0到1的落地。
+【教育背景】
+• 某重点理工类大学（985）| 计算机科学与技术 | 本科 | 2022.09-2026.06
+【项目经验】
+• 企业级智能助手项目：负责需求拆解、RAG 召回评估和上线验收。
+【专业技能】
+Python | SQL | RAG | Agent 编排
+"""
+
+    result = extract_resume_profile(text, "decorated.pdf")
+
+    assert "summary" in result.sections
+    assert "education" in result.sections
+    assert "projects" in result.sections
+    assert "skills" in result.sections
+    assert any(fact.section == "summary" for fact in result.facts)
+    assert any(fact.section == "education" and fact.fact_type == "education" for fact in result.facts)
+    assert any(fact.section == "projects" and fact.fact_type == "project" for fact in result.facts)
+    assert any(fact.section == "skills" and fact.value == "Agent 编排" for fact in result.facts)

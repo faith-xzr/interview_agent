@@ -102,6 +102,36 @@ Prompt Engineering | AI 译后编辑 (MTPE)
     )
 
 
+def test_run_pipeline_preserves_decorated_resume_sections(tmp_path):
+    client = make_client(tmp_path)
+    resume_text = """
+小周
+求职意向：AI产品经理 / Agent 应用架构师
+【个人评价】
+• 精通 Agent 编排与 RAG 链路设计，曾主导企业级智能助手落地。
+【教育背景】
+• 某重点理工类大学（985）| 计算机科学与技术 | 本科
+【项目经验】
+• 企业级智能助手项目：负责 RAG 召回评估和上线验收。
+【专业技能】
+Python | SQL | RAG | Agent 编排
+"""
+
+    response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "AI产品经理，负责 Agent 应用、RAG 链路设计和项目落地。",
+            "resume_texts": [resume_text],
+        },
+    )
+
+    assert response.status_code == 200
+    facts = response.json()["candidates"][0]["extraction_facts"]
+    assert any(fact["section"] == "summary" for fact in facts)
+    assert any(fact["section"] == "projects" for fact in facts)
+    assert any(fact["section"] == "skills" and fact["value"] == "Agent 编排" for fact in facts)
+
+
 def test_run_pipeline_accepts_jd_text_with_resume_file_only(tmp_path):
     client = make_client(tmp_path)
     resume_path = Path("samples/resumes/小黄_深度实战版_.pdf")
