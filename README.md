@@ -13,44 +13,51 @@
 - OpenAI-compatible LLM 可选；没有 `LLM_API_KEY` 时自动使用本地规则兜底。
 - 外部 LLM 调用前会脱敏候选人姓名、电话、邮箱和微信号。
 
-## 核心流程
+## 五张图读懂项目
 
-系统围绕 Scenario A「简历解析与试题生成」组织成四个可解释步骤。
+这个项目围绕 Scenario A「简历解析与试题生成」展开：用户输入一份 JD 和一组候选人简历，系统先把材料转成结构化画像，再进行匹配评估，最后生成面试题和追问建议。下面五张图分别对应总架构和四个核心业务模块。
 
-1. **结构化提取**：上传或粘贴 JD 与简历后，后端先解析 PDF/DOCX/TXT 文本，再抽取 `JDProfile`、`CandidateProfile` 和带原文证据的 `ExtractedFact`。配置了 LLM 时优先使用 LLM 做语义抽取；LLM 不可用、输出无效或缺少证据时，自动回退到本地规则抽取。候选人个人信息在外部 LLM 调用前会先脱敏。
-2. **智能匹配打分**：系统用 JD 的技能、职责和岗位名检索当前候选人简历原文中的相关片段，同时把结构化 facts 直接送入评分上下文。LLM 可用时先根据 JD facts 生成动态 Rubric，再逐项判断候选人是否匹配；失败时回退到本地六维评分器。两条路径都输出同一个 `MatchReport`。
-3. **试题生成**：当候选人匹配分达到材料质量阈值后，系统基于 JD、候选人档案、简历 facts 和 `MatchReport` 生成 10 道面试题。LLM Prompt 约束题目结构、题型比例和评分标准；LLM 不可用或输出不合规时，使用本地规则题库兜底。
-4. **追问模拟**：系统提供两层追问。一层是在运行报告中预生成 3-5 条追问，主要来自简历模糊点和匹配缺口；另一层是面试官输入候选人回答后，通过 `/api/runs/{run_id}/answer-followup` 生成针对当前回答的动态追问。动态追问同样有规则兜底。
+### 1. 项目总览：从材料到可面试判断
 
-流程图 PDF：
+![简历解析与试题生成助手架构图](assets/resume-question-assistant-architecture.png)
 
-- [结构化提取流程](assets/structured_extraction_flow.pdf)
-- [智能匹配打分流程](assets/scoring_flow.pdf)
-- [试题生成流程](assets/question-generation-flow%201.pdf)
-- [追问生成流程](assets/followup-flow%201.pdf)
+[查看高清 PDF](assets/resume-question-assistant-architecture.pdf)
 
-## 架构图与数据流
+总览图展示了完整数据流：前端负责上传 JD、简历和文本兜底输入，FastAPI 后端串联文档解析、结构化抽取、匹配打分、试题生成、追问生成和本地持久化。所有模块最终回到同一份 `RunReport`，前端可以展示候选人总览、结构化档案、匹配理由、面试问题、追问建议，也可以导出 JSON 报告。
 
-```mermaid
-flowchart TD
-    UI["React/Vite 前端\n文件上传、文本兜底、结果页"] --> API["FastAPI API\n/api/runs、/api/health、/api/runs/{id}/export"]
-    API --> Parser["document_parser\nPDF/DOCX/TXT/OCR 文本解析"]
-    Parser --> Extraction["extraction\nJD/简历结构化提取"]
-    Extraction --> Privacy["privacy\nPII 脱敏与恢复"]
-    Parser --> VectorStore["vector_store\n简历原文切块与相关片段召回"]
-    Extraction --> Scoring["scoring\nLLM Rubric 打分 / 规则评分兜底"]
-    VectorStore --> Scoring
-    Scoring --> MatchReport["MatchReport\n分数、维度解释、缺口、证据"]
-    MatchReport --> Questions["question_generation\n10 道结构化面试题"]
-    MatchReport --> Followups["followups / interview_followup\n预生成追问与回答后动态追问"]
-    Extraction --> Storage["SQLite storage\nRunReport 持久化"]
-    MatchReport --> Storage
-    Questions --> Storage
-    Followups --> Storage
-    Storage --> Export["JSON 导出"]
-```
+### 2. 结构化提取：把原始 JD 和简历变成稳定画像
 
-模块划分：
+![结构化抽取流程](assets/structured-extraction-flow.png)
+
+[查看高清 PDF](assets/structured_extraction_flow.pdf)
+
+结构化提取是后续匹配和出题的基础。系统先把 PDF/DOCX/TXT 或粘贴文本统一解析成纯文本，图片型 PDF 在 macOS 演示环境可走 Vision OCR 兜底。随后后端抽取 `JDProfile`、`CandidateProfile` 和带原文证据的 `ExtractedFact`：有 LLM 时优先语义抽取，没有 API key、模型输出无效或证据不足时，自动回退到本地规则抽取。候选人姓名、电话、邮箱、微信号会在外部 LLM 调用前脱敏。
+
+### 3. 智能匹配打分：动态 Rubric + 规则兜底
+
+![智能匹配打分流程](assets/scoring-flow.png)
+
+[查看高清 PDF](assets/scoring_flow.pdf)
+
+匹配模块不只是让模型给一个分数，而是把 JD facts、候选人 facts、候选人画像和向量召回片段一起放入评分上下文。LLM 可用时，系统先根据本次 JD 生成动态 Rubric，再逐项判断候选人覆盖情况；Rubric 或匹配 JSON 不合规时，回退到本地六维评分器。两条路径都输出统一的 `MatchReport`，包含总分、维度解释、匹配理由、缺口理由和待确认点。
+
+### 4. 试题生成：围绕岗位、候选人和匹配缺口出题
+
+![面试试题生成流程](assets/question-generation-flow.png)
+
+[查看高清 PDF](assets/question-generation-flow.pdf)
+
+试题生成发生在候选人材料质量达到阈值之后，避免信息不足时硬生成看似专业但没有依据的问题。系统会把 JD、候选人档案、简历 facts、匹配理由和缺口一起交给生成模块，目标是输出 10 道带考察点、题型、难度和评分标准的面试题。LLM 输出会经过数量、字段和结构校验；不可用或不合规时，使用本地规则题库兜底。
+
+### 5. 追问生成：把报告缺口延伸成下一轮确认动作
+
+![追问生成流程](assets/followup-flow.png)
+
+[查看高清 PDF](assets/followup-flow.pdf)
+
+追问模块分两层：第一层是在运行报告中预生成 3-5 条追问，主要来自简历模糊点、匹配缺口和待确认事项；第二层是面试官录入候选人回答后，通过 `/api/runs/{run_id}/answer-followup` 生成针对当前回答的动态追问。这样追问不是独立题库，而是沿着前序抽取、匹配和真实回答继续下钻。
+
+## 模块划分
 
 - `backend/app/main.py`：API 入口，负责文件收集、运行记录查询、JSON 导出和回答后追问接口。
 - `backend/app/pipeline.py`：主编排入口，串联抽取、向量片段召回、评分、试题生成、追问和持久化。
