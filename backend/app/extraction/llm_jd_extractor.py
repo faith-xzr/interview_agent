@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from typing import Any, Iterable, List, Optional, Tuple
 
 from app.schemas import ExtractedFact, JDProfile
@@ -13,6 +14,7 @@ SYSTEM_PROMPT = (
     "evidence 必须来自原文，禁止编造。"
 )
 EXTRACTOR_TAG = "llm_end_to_end"
+DEFAULT_JOB_TITLE = "未命名岗位"
 
 _KNOWN_CATEGORIES = {
     "skill",
@@ -68,7 +70,8 @@ def extract_jd_with_llm(llm, text: str) -> Optional[Tuple[JDProfile, List[Extrac
     if not facts:
         return None
 
-    profile = _derive_profile(facts)
+    job_title = _extract_supported_job_title(payload.get("job_title"), text) or _infer_job_title_from_text(text)
+    profile = _derive_profile(facts, job_title=job_title)
     return profile, facts
 
 
@@ -190,7 +193,7 @@ def _normalize(value: str) -> str:
     return "".join(str(value).lower().split())
 
 
-def _derive_profile(facts: List[ExtractedFact]) -> JDProfile:
+def _derive_profile(facts: List[ExtractedFact], job_title: str = "") -> JDProfile:
     job_titles: List[str] = []
     responsibilities: List[str] = []
     required_skills: List[str] = []
@@ -225,7 +228,7 @@ def _derive_profile(facts: List[ExtractedFact]) -> JDProfile:
             job_titles.append(value)
 
     profile_data = {
-        "job_title": job_titles[0] if job_titles else "未命名岗位",
+        "job_title": job_title or (job_titles[0] if job_titles else DEFAULT_JOB_TITLE),
         "responsibilities": responsibilities,
         "required_skills": required_skills,
         "nice_to_have_skills": nice_to_have_skills,
@@ -248,3 +251,88 @@ def _first_int(value: str) -> int:
         elif digits:
             break
     return int(digits) if digits else 0
+
+
+def _extract_supported_job_title(raw: Any, source_text: str) -> str:
+    title = ""
+    evidence = ""
+    if isinstance(raw, str):
+        title = raw
+    elif isinstance(raw, dict):
+        for key in ("job_title", "title", "position", "name", "value"):
+            if raw.get(key):
+                title = str(raw.get(key))
+                break
+        evidence = _clean_text(raw.get("evidence"))
+    if not title:
+        return ""
+
+    title = _clean_job_title_candidate(title)
+    if not _is_valid_job_title(title):
+        return ""
+    if _is_supported_by_source(title, source_text, evidence):
+        return title
+    return ""
+
+
+def _infer_job_title_from_text(text: str) -> str:
+    lines = [line.strip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n") if line.strip()]
+    for line in lines[:8]:
+        labeled = _extract_labeled_job_title(line)
+        if labeled:
+            return labeled
+    for line in lines[:4]:
+        candidate = _clean_job_title_candidate(line)
+        if _is_valid_job_title(candidate):
+            return candidate
+    return ""
+
+
+def _extract_labeled_job_title(line: str) -> str:
+    match = re.search(
+        r"(?:岗位名称|岗位名|职位名称|职位名|招聘岗位|招聘职位|应聘岗位|目标岗位|岗位|职位)\s*[:：]\s*(.+)",
+        line,
+    )
+    if not match:
+        return ""
+    candidate = _clean_job_title_candidate(match.group(1))
+    return candidate if _is_valid_job_title(candidate) else ""
+
+
+def _clean_job_title_candidate(value: str) -> str:
+    candidate = _clean_text(value)
+    candidate = re.sub(
+        r"^(?:岗位名称|岗位名|职位名称|职位名|招聘岗位|招聘职位|应聘岗位|目标岗位|岗位|职位|招聘)\s*[:：]?\s*",
+        "",
+        candidate,
+    )
+    candidate = re.split(r"[，,。；;\n\r]", candidate, maxsplit=1)[0].strip()
+    return candidate[:50].strip()
+
+
+def _is_valid_job_title(value: str) -> bool:
+    if not value or value == DEFAULT_JOB_TITLE:
+        return False
+    stripped = value.strip().rstrip("：:")
+    if len(stripped) < 2:
+        return False
+    if stripped in _HEADING_HINTS:
+        return False
+    if re.search(r"(职责|要求|资格|描述|工作内容)$", stripped) and len(stripped) <= 8:
+        return False
+    if re.match(r"^(负责|职责|要求|熟悉|精通|需要|任职|工作内容|你将|我们希望)", stripped):
+        return False
+    return True
+
+
+def _is_supported_by_source(title: str, source_text: str, evidence: str = "") -> bool:
+    normalized_source = _normalize(source_text)
+    normalized_title = _normalize(title)
+    if normalized_title in normalized_source:
+        return True
+    normalized_evidence = _normalize(evidence)
+    return bool(
+        normalized_evidence
+        and normalized_evidence in normalized_source
+        and normalized_title in normalized_evidence
+    )

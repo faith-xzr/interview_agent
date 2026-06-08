@@ -327,7 +327,22 @@ def test_llm_question_generation_uses_jd_resume_and_returns_lightweight_question
 
     assert len(questions) == 10
     assert all(set(q.model_dump().keys()) == {"question", "focus", "scoring_criteria"} for q in questions)
+    assert "待匹配岗位名称" in llm.calls[0][1]
     assert "高级推荐系统后端工程师" in llm.calls[0][1]
     assert "低延迟推荐项目" in llm.calls[0][1]
     assert "Kafka" in llm.calls[0][1]
     assert "{{" not in llm.calls[0][1]
+
+
+def test_rule_followup_generation_uses_job_title_as_context():
+    jd = JDProfile(
+        job_title="高级推荐系统后端工程师",
+        responsibilities=["负责推荐平台建设"],
+        required_skills=["Kafka", "Flink"],
+    )
+    candidate = CandidateProfile(name="小周")
+    match = score_candidate(jd, candidate, [])
+
+    followups = generate_followups(candidate, match, jd=jd)
+
+    assert any("高级推荐系统后端工程师" in item.question for item in followups)

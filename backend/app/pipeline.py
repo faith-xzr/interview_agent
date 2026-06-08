@@ -17,6 +17,8 @@ from app.scoring import score_candidate, score_candidate_with_llm
 from app.storage import RunStorage
 from app.vector_store import VectorStore
 
+QUESTION_MATERIAL_MIN_SCORE = 40
+
 
 class RecruitingPipeline:
     def __init__(self, settings: Settings) -> None:
@@ -48,17 +50,18 @@ class RecruitingPipeline:
             )
             if match is None:
                 match = score_candidate(jd_profile, profile, evidence_texts, extraction_facts)
-            question_resume_text = mask_pii(resume_text, candidate_name=profile.name).text
-            match.interview_questions = generate_interview_questions(
-                jd_profile,
-                profile,
-                match,
-                llm=self.llm,
-                jd_text=jd_text,
-                resume_text=question_resume_text,
-                extraction_facts=extraction_facts,
-            )
-            match.followup_questions = generate_followups(profile, match)
+            if match.total_score >= QUESTION_MATERIAL_MIN_SCORE:
+                question_resume_text = mask_pii(resume_text, candidate_name=profile.name).text
+                match.interview_questions = generate_interview_questions(
+                    jd_profile,
+                    profile,
+                    match,
+                    llm=self.llm,
+                    jd_text=jd_text,
+                    resume_text=question_resume_text,
+                    extraction_facts=extraction_facts,
+                )
+                match.followup_questions = generate_followups(profile, match, jd=jd_profile)
             candidates.append(
                 CandidateReport(
                     candidate_id=candidate_id,

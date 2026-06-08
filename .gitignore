@@ -14,6 +14,9 @@ frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
 
+# Keep rendered diagram PDFs in git, but not editable SVG sources.
+assets/*.svg
+
 # Local assignment brief
 【一面题目】原生 AI 招聘助手 Demo 搭建.pdf
 docs/superpowers/

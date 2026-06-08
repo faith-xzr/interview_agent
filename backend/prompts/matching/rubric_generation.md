@@ -16,6 +16,10 @@ JD facts:
 {{JD_FACTS_JSON}}
 ```
 
+# 岗位名称上下文
+
+`JDProfile.job_title` 是本次待匹配岗位名称。生成 Rubric 时要用它理解岗位定位和场景边界，但不要把岗位名称本身当作一条可打分 requirement；真正可打分的要求仍然必须来自 JD facts。
+
 # 输出格式
 
 严格返回一个 JSON 对象：

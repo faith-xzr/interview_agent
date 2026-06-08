@@ -10,7 +10,7 @@ import httpx
 from app.config import Settings
 from app.main import create_app
 from app.pipeline import RecruitingPipeline
-from app.schemas import JDProfile, RunReport
+from app.schemas import FollowUpQuestion, InterviewQuestion, JDProfile, MatchReport, RunReport, ScoreBreakdown
 
 
 def make_client(tmp_path):
@@ -497,6 +497,114 @@ Midjourney | Runway
     )
     stored = pipeline.get_run(report.run_id)
     assert stored.candidates[0].match_report.dimension_scores["平台与案例"] == 16
+
+
+def test_pipeline_skips_question_materials_when_match_score_is_below_40(tmp_path, monkeypatch):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    generation_calls = []
+
+    def low_match(*args, **kwargs):
+        return MatchReport(
+            total_score=39,
+            decision="",
+            dimension_scores={},
+            score_breakdown=ScoreBreakdown(),
+            match_reasons=["匹配分低于面试生成阈值"],
+            gap_reasons=["核心技能未覆盖"],
+        )
+
+    def generate_questions(*args, **kwargs):
+        generation_calls.append("questions")
+        return [
+            InterviewQuestion(
+                question="不应生成的问题",
+                focus="低分候选人",
+                scoring_criteria="不应进入面试题生成环节。",
+            )
+        ]
+
+    def generate_static_followups(*args, **kwargs):
+        generation_calls.append("followups")
+        return [
+            FollowUpQuestion(
+                question="不应生成的追问",
+                reason="低分候选人不需要追问生成。",
+            )
+        ]
+
+    monkeypatch.setattr("app.pipeline.score_candidate_with_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.pipeline.score_candidate", low_match)
+    monkeypatch.setattr("app.pipeline.generate_interview_questions", generate_questions)
+    monkeypatch.setattr("app.pipeline.generate_followups", generate_static_followups)
+
+    report = pipeline.run("高级 Python 后端工程师，负责 FastAPI 平台建设。", [("weak.txt", "候选人\n客服经验。")])
+
+    match_report = report.candidates[0].match_report
+    assert match_report.total_score == 39
+    assert match_report.interview_questions == []
+    assert match_report.followup_questions == []
+    assert generation_calls == []
+
+
+def test_pipeline_generates_question_materials_at_score_40(tmp_path, monkeypatch):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+
+    def threshold_match(*args, **kwargs):
+        return MatchReport(
+            total_score=40,
+            decision="",
+            dimension_scores={},
+            score_breakdown=ScoreBreakdown(),
+            match_reasons=["刚好达到面试生成阈值"],
+            gap_reasons=["仍需面试确认"],
+        )
+
+    monkeypatch.setattr("app.pipeline.score_candidate_with_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.pipeline.score_candidate", threshold_match)
+    monkeypatch.setattr(
+        "app.pipeline.generate_interview_questions",
+        lambda *args, **kwargs: [
+            InterviewQuestion(
+                question="达到阈值后生成的问题",
+                focus="边界分数",
+                scoring_criteria="40 分应进入面试题生成环节。",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "app.pipeline.generate_followups",
+        lambda *args, **kwargs: [
+            FollowUpQuestion(
+                question="达到阈值后生成的追问",
+                reason="40 分应进入追问生成环节。",
+            )
+        ],
+    )
+
+    report = pipeline.run("高级 Python 后端工程师，负责 FastAPI 平台建设。", [("threshold.txt", "候选人\nPython 经验。")])
+
+    match_report = report.candidates[0].match_report
+    assert match_report.total_score == 40
+    assert [item.question for item in match_report.interview_questions] == ["达到阈值后生成的问题"]
+    assert [item.question for item in match_report.followup_questions] == ["达到阈值后生成的追问"]
 
 
 def test_pipeline_uses_llm_question_generation_after_matching(tmp_path):

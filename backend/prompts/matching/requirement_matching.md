@@ -8,6 +8,10 @@
 {{JD_PROFILE_JSON}}
 ```
 
+# 岗位名称上下文
+
+`JDProfile.job_title` 是本次待匹配岗位名称。判断候选人覆盖情况时，要用岗位名称理解经验是否贴近该岗位，但最终匹配结论必须落到 Rubric 中的逐条 requirement 和可引用证据上。
+
 # 动态评分 Rubric
 
 ```json

@@ -85,6 +85,8 @@ def test_generate_scoring_rubric_uses_jd_facts_and_normalizes_to_100():
     ]
     assert sum(item.max_score for item in rubric.items) == 100
     assert rubric.items[0].dimension == "AIGC工具生态"
+    assert "待匹配岗位名称" in llm.calls[0][1]
+    assert "AIGC 内容运营" in llm.calls[0][1]
     assert "{{JD_FACTS_JSON}}" not in llm.calls[0][1]
 
 
@@ -236,6 +238,8 @@ def test_score_candidate_with_llm_matches_all_dynamic_requirements():
     report = score_candidate_with_llm(llm, jd, candidate, ["Midjourney Runway KOL"], jd_facts, candidate_facts)
 
     assert report is not None
+    assert "待匹配岗位名称" in llm.calls[1][1]
+    assert "AIGC 内容运营" in llm.calls[1][1]
     assert report.total_score == 44
     assert [item.requirement for item in report.requirement_matches] == [
         "熟练运用 ChatGPT",

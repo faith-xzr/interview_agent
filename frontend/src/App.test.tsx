@@ -319,6 +319,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
 
     await waitFor(() => expect(screen.getAllByText("王五").length).toBeGreaterThan(0));
+    expect(screen.getByText("高级 Python 后端工程师")).toBeInTheDocument();
+    expect(screen.queryByText("未命名岗位")).not.toBeInTheDocument();
     expect(screen.getAllByText("88").length).toBeGreaterThan(0);
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.queryByText("必备技能")).not.toBeInTheDocument();
@@ -345,7 +347,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
     expect(screen.getByText("抽取过程")).toBeInTheDocument();
     expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
-    expect(screen.getByText("简历抽取事实")).toBeInTheDocument();
+    expect(screen.getByText("简历中的重点")).toBeInTheDocument();
     expect(screen.getAllByText("必备技能").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "学历背景" })).toBeInTheDocument();
     expect(screen.getByText("某理工大学计算机科学与技术本科。")).toBeInTheDocument();
@@ -380,6 +382,251 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "追问模拟" }));
     expect(screen.getByText("请补充项目指标。")).toBeInTheDocument();
     expect(screen.queryByText("追问来源证据 1")).not.toBeInTheDocument();
+  });
+
+  test("shows skipped question generation state for candidates below score threshold", async () => {
+    const lowScoreReport = JSON.parse(JSON.stringify(demoReport));
+    lowScoreReport.candidates[0].match_report.total_score = 39;
+    lowScoreReport.candidates[0].match_report.interview_questions = [];
+    lowScoreReport.candidates[0].match_report.followup_questions = [];
+    global.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify(lowScoreReport), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
+    await user.type(screen.getByLabelText("简历文本兜底"), "王五，客服经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await screen.findByText("候选人总览");
+
+    await user.click(screen.getByRole("button", { name: "试题生成" }));
+    expect(screen.getByText("匹配分低于 40，已跳过面试题生成。")).toBeInTheDocument();
+    expect(screen.queryByText("面试问题 1")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "追问模拟" }));
+    expect(screen.getByText("匹配分低于 40，已跳过追问生成。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "生成追问" })).not.toBeInTheDocument();
+  });
+
+  test("keeps resume extraction highlights coherent and hides low-value facts", async () => {
+    const fragmentedReport = JSON.parse(JSON.stringify(demoReport));
+    fragmentedReport.candidates[0].match_report.match_reasons = [
+      "AI工具应用能力：熟练运用 ChatGPT、Midjourney 与 Runway。",
+      "项目经验匹配：有校园营销案例。"
+    ];
+    fragmentedReport.candidates[0].extraction_facts = [
+      {
+        fact_type: "responsibility",
+        value: "负责「定制&找工厂」账号矩阵操盘，独立闭环完成从选题、脚本到分发的全流程，累计产出",
+        evidence: "负责「定制&找工厂」账号矩阵操盘，独立闭环完成从选题、脚本到分发的全流程，累计产出",
+        section: "experience",
+        line_start: 10,
+        line_end: 10,
+        confidence: 0.84,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "responsibility",
+        value: "爆款短视频15条",
+        evidence: "爆款短视频15条",
+        section: "experience",
+        line_start: 11,
+        line_end: 11,
+        confidence: 0.82,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "responsibility",
+        value: "运用 AIGC 工作流（Midjourney + Runway）辅助视觉生产，将单条视频制作周期从3天缩短",
+        evidence: "运用 AIGC 工作流（Midjourney + Runway）辅助视觉生产，将单条视频制作周期从3天缩短",
+        section: "experience",
+        line_start: 12,
+        line_end: 12,
+        confidence: 0.84,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "responsibility",
+        value: "至4小时",
+        evidence: "至4小时",
+        section: "experience",
+        line_start: 13,
+        line_end: 13,
+        confidence: 0.8,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "project",
+        value: "XX 品牌 AIGC 营销实战（校园创业）",
+        evidence: "XX 品牌 AIGC 营销实战（校园创业）",
+        section: "projects",
+        line_start: 20,
+        line_end: 20,
+        confidence: 0.84,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "project",
+        value: "带领5人团队为校园咖啡店策划 AIGC 营销活动，利用 Midjourney 生成系列海报，节省设计",
+        evidence: "带领5人团队为校园咖啡店策划 AIGC 营销活动，利用 Midjourney 生成系列海报，节省设计",
+        section: "projects",
+        line_start: 21,
+        line_end: 21,
+        confidence: 0.86,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "metric",
+        value: "5人",
+        evidence: "带领5人团队为校园咖啡店策划 AIGC 营销活动",
+        section: "projects",
+        line_start: 21,
+        line_end: 21,
+        confidence: 0.86,
+        extractor: "section_rules"
+      },
+      {
+        fact_type: "project",
+        value: "成本2000元",
+        evidence: "成本2000元",
+        section: "projects",
+        line_start: 22,
+        line_end: 22,
+        confidence: 0.84,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "skill",
+        value: "熟练掌握小红书/抖音/TikTok平台运营；精通AIGC工作流（ChatGPT/Midjourney/Runway）；熟悉Python、Photoshop、剪映等工具",
+        evidence: "熟练掌握小红书/抖音/TikTok平台运营；精通AIGC工作流（ChatGPT/Midjourney/Runway）；熟悉Python、Photoshop、剪映等工具",
+        section: "skills",
+        line_start: 30,
+        line_end: 30,
+        confidence: 0.86,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "skill",
+        value: "精通 AIGC 工作流",
+        evidence: "精通 AIGC 工作流",
+        section: "skills",
+        line_start: 31,
+        line_end: 31,
+        confidence: 0.84,
+        extractor: "section_rules"
+      },
+      {
+        fact_type: "skill",
+        value: "（ChatGPT/Midjourney/Runway）",
+        evidence: "（ChatGPT/Midjourney/Runway）",
+        section: "skills",
+        line_start: 32,
+        line_end: 32,
+        confidence: 0.82,
+        extractor: "section_rules"
+      },
+      {
+        fact_type: "skill",
+        value: "熟悉",
+        evidence: "熟悉",
+        section: "skills",
+        line_start: 33,
+        line_end: 33,
+        confidence: 0.72,
+        extractor: "section_rules"
+      },
+      {
+        fact_type: "summary",
+        value: "具备极强的 AI 赋能意识，善于利用新技术解决业务痛点；拥有出色的逻辑",
+        evidence: "具备极强的 AI 赋能意识，善于利用新技术解决业务痛点；拥有出色的逻辑",
+        section: "summary",
+        line_start: 40,
+        line_end: 40,
+        confidence: 0.82,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "summary",
+        value: "具备极强的 AI 赋能意识，善于利用新技术解决业务痛点",
+        evidence: "具备极强的 AI 赋能意识，善于利用新技术解决业务痛点",
+        section: "summary",
+        line_start: 40,
+        line_end: 40,
+        confidence: 0.82,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "summary",
+        value: "思维与快速学习能力",
+        evidence: "思维与快速学习能力",
+        section: "summary",
+        line_start: 41,
+        line_end: 41,
+        confidence: 0.82,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "summary",
+        value: "拥有出色的逻辑思维与快速学习能力",
+        evidence: "拥有出色的逻辑思维与快速学习能力",
+        section: "summary",
+        line_start: 41,
+        line_end: 41,
+        confidence: 0.82,
+        extractor: "llm_resume"
+      },
+      {
+        fact_type: "domain_evidence",
+        value: "AI",
+        evidence: "AI",
+        section: "summary",
+        line_start: 40,
+        line_end: 40,
+        confidence: 0.72,
+        extractor: "section_rules"
+      }
+    ];
+    global.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify(fragmentedReport), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as typeof fetch;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "AIGC 内容运营");
+    await user.type(screen.getByLabelText("简历文本兜底"), "小李，AIGC 校园营销经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await screen.findByText("候选人总览");
+    await user.click(screen.getByRole("button", { name: "结构化提取" }));
+
+    expect(screen.getByText("简历中的重点")).toBeInTheDocument();
+    expect(screen.queryByText("简历抽取事实")).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI工具应用能力/)).not.toBeInTheDocument();
+    expect(screen.queryByText("领域证据")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    expect(screen.getByText("负责「定制&找工厂」账号矩阵操盘，独立闭环完成从选题、脚本到分发的全流程，累计产出爆款短视频15条")).toBeInTheDocument();
+    expect(screen.queryByText("爆款短视频15条")).not.toBeInTheDocument();
+    expect(screen.getByText("运用 AIGC 工作流（Midjourney + Runway）辅助视觉生产，将单条视频制作周期从3天缩短至4小时")).toBeInTheDocument();
+    expect(screen.queryByText("至4小时")).not.toBeInTheDocument();
+    expect(screen.getByText("XX 品牌 AIGC 营销实战（校园创业）：带领5人团队为校园咖啡店策划 AIGC 营销活动，利用 Midjourney 生成系列海报，节省设计成本2000元")).toBeInTheDocument();
+    expect(screen.queryByText(/节省设计5人成本/)).not.toBeInTheDocument();
+    expect(screen.queryByText("成本2000元")).not.toBeInTheDocument();
+    expect(screen.getByText("AIGC 工作流（ChatGPT/Midjourney/Runway）")).toHaveClass("skill-chip");
+    expect(screen.queryByText("（ChatGPT/Midjourney/Runway）")).not.toBeInTheDocument();
+    expect(screen.queryByText("熟悉")).not.toBeInTheDocument();
+    expect(screen.getByText("具备极强的 AI 赋能意识，善于利用新技术解决业务痛点")).toBeInTheDocument();
+    expect(screen.getByText("拥有出色的逻辑思维与快速学习能力")).toBeInTheDocument();
+    expect(screen.queryByText("思维与快速学习能力")).not.toBeInTheDocument();
   });
 
   test("generates follow-up after a candidate answers an interview question", async () => {

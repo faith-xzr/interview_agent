@@ -23,6 +23,7 @@ const RESULT_VIEWS: Array<{ id: ResultView; label: string }> = [
   { id: "questions", label: "试题生成" },
   { id: "followups", label: "追问模拟" }
 ];
+const QUESTION_MATERIAL_MIN_SCORE = 40;
 
 export default function App() {
   const [jdText, setJdText] = useState("");
@@ -420,7 +421,7 @@ function CandidateDetail({
         <>
           <section className="detail-section">
             <h3>匹配理由</h3>
-            <List items={report.match_reasons} />
+            <List items={visibleDisplayItems(report.match_reasons)} />
           </section>
           <section className="detail-section">
             <h3>评分拆解</h3>
@@ -440,22 +441,30 @@ function CandidateDetail({
       {view === "questions" ? (
         <section className="detail-section">
           <h3>面试问题</h3>
-          <ol className="question-list">
-            {report.interview_questions.map((item, index) => (
-              <li key={`${item.question}-${index}`}>
-                <strong>{item.question}</strong>
-                <span>{item.focus}</span>
-                <p>{item.scoring_criteria}</p>
-              </li>
-            ))}
-          </ol>
+          {shouldSkipQuestionMaterials(report) ? (
+            <p className="empty-facts">匹配分低于 40，已跳过面试题生成。</p>
+          ) : (
+            <ol className="question-list">
+              {report.interview_questions.map((item, index) => (
+                <li key={`${item.question}-${index}`}>
+                  <strong>{item.question}</strong>
+                  <span>{item.focus}</span>
+                  <p>{item.scoring_criteria}</p>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
       ) : null}
 
       {view === "followups" ? (
         <section className="detail-section">
           <h3>追问模拟</h3>
-          <FollowupSimulator candidate={candidate} runId={runId} />
+          {shouldSkipQuestionMaterials(report) ? (
+            <p className="empty-facts">匹配分低于 40，已跳过追问生成。</p>
+          ) : (
+            <FollowupSimulator candidate={candidate} runId={runId} />
+          )}
         </section>
       ) : null}
     </article>
@@ -630,7 +639,7 @@ function ResumeExtractionColumn({ groups }: { groups: FactGroup[] }) {
   return (
     <div className="extraction-column">
       <div className="extraction-column-header">
-        <strong>简历抽取事实</strong>
+        <strong>简历中的重点</strong>
         <span>{total} 项</span>
       </div>
       {groups.length ? (
@@ -640,7 +649,7 @@ function ResumeExtractionColumn({ groups }: { groups: FactGroup[] }) {
           ))}
         </div>
       ) : (
-        <p className="empty-facts">暂无简历抽取事实</p>
+        <p className="empty-facts">暂无简历中的重点</p>
       )}
     </div>
   );
@@ -774,10 +783,12 @@ function consistencyLabel(value: string) {
 }
 
 function candidateSummary(report: MatchReport) {
+  const matchReasons = visibleDisplayItems(report.match_reasons);
+  const gapReasons = visibleDisplayItems(report.gap_reasons);
   if (shouldPreferGapSummary(report)) {
-    return report.gap_reasons[0] ?? "暂未识别到明确匹配依据";
+    return gapReasons[0] ?? "暂未识别到明确匹配依据";
   }
-  return report.match_reasons[0] ?? report.gap_reasons[0] ?? "暂未识别到明确匹配依据";
+  return matchReasons[0] ?? gapReasons[0] ?? "暂未识别到明确匹配依据";
 }
 
 function shouldPreferGapSummary(report: MatchReport) {
@@ -785,6 +796,10 @@ function shouldPreferGapSummary(report: MatchReport) {
     (item) => (item.status === "强匹配" || item.status === "直接匹配") && item.contribution > 0
   );
   return report.total_score < 60 || !hasStrongEvidence;
+}
+
+function shouldSkipQuestionMaterials(report: MatchReport) {
+  return report.total_score < QUESTION_MATERIAL_MIN_SCORE;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -799,8 +814,20 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const SECTION_ORDER = ["basic", "education", "experience", "projects", "skills", "summary", "certifications"];
-const HIDDEN_RESUME_FACT_TYPES = new Set(["target_role", "location", "contact", "phone", "email"]);
+const HIDDEN_RESUME_FACT_TYPES = new Set([
+  "target_role",
+  "location",
+  "contact",
+  "phone",
+  "email",
+  "domain_evidence",
+  "领域证据",
+  "ai_tool_application",
+  "tool_application"
+]);
+const HIDDEN_DISPLAY_TEXT_PATTERNS = [/^AI\s*工具应用能力\s*[:：]/i];
 const FACT_LABELS: Record<string, string> = {
+  job_title: "岗位名称",
   required_skill: "必备技能",
   nice_to_have_skill: "加分项",
   responsibility: "核心职责",
@@ -851,7 +878,13 @@ function sortFactsWithinSection(facts: ExtractedFact[]) {
     domain_evidence: 7,
     summary: 8
   };
-  return [...facts].sort((left, right) => (rank[left.fact_type] ?? 99) - (rank[right.fact_type] ?? 99));
+  return [...facts].sort((left, right) => {
+    if (left.section === right.section && ["experience", "projects", "summary"].includes(left.section)) {
+      const lineDelta = (left.line_start ?? 9999) - (right.line_start ?? 9999);
+      if (lineDelta !== 0) return lineDelta;
+    }
+    return (rank[left.fact_type] ?? 99) - (rank[right.fact_type] ?? 99);
+  });
 }
 
 function compactFactsForSection(section: string, facts: ExtractedFact[]) {
@@ -859,15 +892,261 @@ function compactFactsForSection(section: string, facts: ExtractedFact[]) {
     return facts.filter((fact) => fact.fact_type === "education_summary" || fact.fact_type === "education").slice(0, 1);
   }
   if (section === "experience") {
-    const richerFacts = facts.filter((fact) => fact.fact_type === "work_summary" || fact.fact_type === "responsibility");
+    const richerFacts = facts.filter(
+      (fact) => fact.fact_type === "work_summary" || fact.fact_type === "responsibility" || fact.fact_type === "metric"
+    );
     const displayFacts = richerFacts.length ? richerFacts : facts;
-    return displayFacts.slice(0, 4);
+    return compactNarrativeFacts(displayFacts, "experience").slice(0, 4);
+  }
+  if (section === "projects") {
+    return compactNarrativeFacts(facts, "projects").slice(0, 6);
+  }
+  if (section === "skills") {
+    return compactSkillFacts(facts);
+  }
+  if (section === "summary") {
+    const highlightFacts = facts.filter((fact) => fact.fact_type === "summary" || fact.fact_type === "highlight");
+    return compactSummaryFacts(highlightFacts.length ? highlightFacts : facts).slice(0, 4);
   }
   return facts.slice(0, 6);
 }
 
 function isVisibleResumeFact(fact: ExtractedFact) {
   return fact.section !== "basic" && !HIDDEN_RESUME_FACT_TYPES.has(fact.fact_type);
+}
+
+function visibleDisplayItems(items: string[]) {
+  return items.filter((item) => !isHiddenDisplayText(item));
+}
+
+function isHiddenDisplayText(value: string) {
+  return HIDDEN_DISPLAY_TEXT_PATTERNS.some((pattern) => pattern.test(value.trim()));
+}
+
+function compactNarrativeFacts(facts: ExtractedFact[], section: string) {
+  const result: ExtractedFact[] = [];
+  let current: ExtractedFact | null = null;
+  for (const fact of facts) {
+    if (!current) {
+      current = fact;
+      continue;
+    }
+    if (isContainedText(current.value, fact.value)) {
+      continue;
+    }
+    if (isContainedText(fact.value, current.value)) {
+      current = { ...fact, fact_type: current.fact_type };
+      continue;
+    }
+    if (shouldMergeWithPrevious(current, fact, section)) {
+      current = mergeFacts(current, fact, isProjectTitleLike(current.value) ? "colon" : "plain");
+      continue;
+    }
+    result.push(current);
+    current = fact;
+  }
+  if (current) {
+    result.push(current);
+  }
+  return dedupeFactsByValue(result);
+}
+
+function compactSummaryFacts(facts: ExtractedFact[]) {
+  if (!facts.length) return [];
+  const base = facts[0];
+  const phrases: string[] = [];
+  for (const fact of facts) {
+    for (const phrase of splitSummaryPhrases(fact.value)) {
+      appendSummaryPhrase(phrases, phrase);
+    }
+  }
+  return removeRedundantPhrases(phrases).map((value, index) => ({
+    ...base,
+    value,
+    line_start: facts[index]?.line_start ?? base.line_start,
+    line_end: facts[index]?.line_end ?? base.line_end
+  }));
+}
+
+function splitSummaryPhrases(value: string) {
+  return cleanFactText(value)
+    .split(/\s*[；;]\s*/)
+    .map((item) => trimEndingPunctuation(trimStartingPunctuation(item)))
+    .filter((item) => item.length >= 4);
+}
+
+function appendSummaryPhrase(phrases: string[], phrase: string) {
+  if (phrases.some((existing) => isContainedText(existing, phrase))) return;
+  const containedIndex = phrases.findIndex((existing) => isContainedText(phrase, existing));
+  if (containedIndex >= 0) {
+    phrases.splice(containedIndex, 1);
+  }
+  const last = phrases[phrases.length - 1];
+  if (last && shouldJoinSummaryPhrase(last, phrase)) {
+    phrases[phrases.length - 1] = `${trimEndingPunctuation(last)}${trimStartingPunctuation(phrase)}`;
+    return;
+  }
+  phrases.push(phrase);
+}
+
+function shouldMergeWithPrevious(previous: ExtractedFact, current: ExtractedFact, section: string) {
+  const previousText = cleanFactText(previous.value);
+  const currentText = cleanFactText(current.value);
+  if (!previousText || !currentText) return false;
+  if (section === "projects" && isProjectTitleLike(previousText)) return true;
+  if (!areAdjacentFacts(previous, current)) return false;
+  if (isContinuationFragment(currentText) || isMetricLikeFragment(currentText)) return true;
+  if (endsLikeUnfinishedPhrase(previousText)) return true;
+  return false;
+}
+
+function mergeFacts(previous: ExtractedFact, current: ExtractedFact, mode: "plain" | "colon") {
+  const previousText = trimEndingPunctuation(cleanFactText(previous.value));
+  const currentText = trimStartingPunctuation(cleanFactText(current.value));
+  const value = mode === "colon"
+    ? `${previousText}：${currentText}`
+    : `${previousText}${currentText}`;
+  return {
+    ...previous,
+    value,
+    evidence: [previous.evidence, current.evidence].filter(Boolean).join("\n"),
+    line_end: current.line_end ?? previous.line_end
+  };
+}
+
+function compactSkillFacts(facts: ExtractedFact[]) {
+  const skillFacts = facts.filter((fact) => fact.fact_type === "skill");
+  if (!skillFacts.length) return facts.slice(0, 6);
+  const base = skillFacts[0];
+  const phrases: string[] = [];
+  for (const fact of skillFacts) {
+    for (const phrase of splitSkillPhrase(fact.value)) {
+      if (!phrase) continue;
+      if (isParentheticalOnly(phrase) && phrases.length) {
+        phrases[phrases.length - 1] = `${phrases[phrases.length - 1]}${phrase}`;
+        continue;
+      }
+      phrases.push(phrase);
+    }
+  }
+  return removeRedundantPhrases(phrases).map((value, index) => ({
+    ...base,
+    value,
+    line_start: skillFacts[index]?.line_start ?? base.line_start,
+    line_end: skillFacts[index]?.line_end ?? base.line_end
+  }));
+}
+
+function splitSkillPhrase(value: string) {
+  return value
+    .split(/\s*[；;]\s*/)
+    .map(cleanSkillText)
+    .filter((item) => item.length >= 2 && !["熟悉", "熟练", "精通", "掌握"].includes(item));
+}
+
+function cleanSkillText(value: string) {
+  return cleanFactText(value)
+    .replace(/^(熟练掌握|熟练运用|熟悉掌握|精通|熟悉|掌握|了解|具备)\s*/u, "")
+    .replace(/^极强的/u, "")
+    .replace(/AIGC\s*工作流/giu, "AIGC 工作流")
+    .replace(/TikTok\s*平台/giu, "TikTok平台");
+}
+
+function removeRedundantPhrases(phrases: string[]) {
+  const unique = dedupeStrings(phrases);
+  return unique.filter((phrase, index) => {
+    const normalized = normalizeComparableText(phrase);
+    return !unique.some((other, otherIndex) => {
+      if (index === otherIndex) return false;
+      const otherNormalized = normalizeComparableText(other);
+      return otherNormalized.includes(normalized) && otherNormalized.length > normalized.length;
+    });
+  }).slice(0, 8);
+}
+
+function dedupeFactsByValue(facts: ExtractedFact[]) {
+  const seen = new Set<string>();
+  return facts.filter((fact) => {
+    const key = normalizeComparableText(fact.value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const key = normalizeComparableText(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+}
+
+function areAdjacentFacts(previous: ExtractedFact, current: ExtractedFact) {
+  if (!previous.line_end || !current.line_start) return true;
+  return current.line_start <= previous.line_end + 1;
+}
+
+function isContinuationFragment(value: string) {
+  return /^(至|到|与|及|和|并|成本|爆款|日均|获|获得|提升|降低|缩短|节省)/u.test(value);
+}
+
+function isMetricLikeFragment(value: string) {
+  return value.length <= 16 && /\d/.test(value) && /(条|个|人|元|%|小时|天|万|次|名|场)/u.test(value);
+}
+
+function endsLikeUnfinishedPhrase(value: string) {
+  return /(累计产出|从\d+(?:\.\d+)?[天小时分钟]*缩短|节省设计|提升|降低|缩短|产出|完成|利用|使用|负责|拥有|逻辑)$/u.test(value);
+}
+
+function shouldJoinSummaryPhrase(previous: string, current: string) {
+  if (/^思维/u.test(current) && /逻辑$/u.test(previous)) return true;
+  if (isContinuationFragment(current)) return true;
+  return endsLikeUnfinishedPhrase(previous) && !startsLikeNewFact(current);
+}
+
+function startsLikeNewFact(value: string) {
+  return /^(具备|拥有|负责|带领|参与|主导|使用|利用|熟悉|精通|掌握|获得|获|能够|能)/u.test(value);
+}
+
+function isProjectTitleLike(value: string) {
+  const text = cleanFactText(value);
+  return text.length <= 36
+    && /(项目|平台|系统|实战|营销|创业|案例)/u.test(text)
+    && !/[，,；;。]/u.test(text)
+    && !/(负责|带领|利用|使用|生成|节省|提升|降低|产出|完成)/u.test(text);
+}
+
+function isParentheticalOnly(value: string) {
+  return /^[（(].+[）)]$/u.test(value);
+}
+
+function cleanFactText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function trimEndingPunctuation(value: string) {
+  return value.replace(/[。；;，,\s]+$/u, "");
+}
+
+function trimStartingPunctuation(value: string) {
+  return value.replace(/^[。；;，,\s]+/u, "");
+}
+
+function normalizeComparableText(value: string) {
+  return value.replace(/\s+/g, "").replace(/[。；;，,、:：]/g, "").toLowerCase();
+}
+
+function isContainedText(container: string, candidate: string) {
+  const normalizedContainer = normalizeComparableText(container);
+  const normalizedCandidate = normalizeComparableText(candidate);
+  return normalizedCandidate.length >= 2
+    && normalizedContainer.length > normalizedCandidate.length
+    && normalizedContainer.includes(normalizedCandidate);
 }
 
 function factDisplayLabel(fact: ExtractedFact) {

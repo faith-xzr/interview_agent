@@ -73,6 +73,8 @@ FastAPI、SQL、React
     profile, facts = result
     assert PROMPT_PATH.exists()
     assert "简历关键能力抽取" in llm.user_prompt
+    assert "不要输出 domain_evidence" in llm.user_prompt
+    assert "相邻行表达同一段职责、项目或亮点时，必须合并成一条完整短句" in llm.user_prompt
     assert "{{RESUME_TEXT}}" not in llm.user_prompt
     assert profile.education == ["某理工大学计算机科学与技术本科，GPA 3.7/4.0。"]
     assert profile.work_experiences == [
