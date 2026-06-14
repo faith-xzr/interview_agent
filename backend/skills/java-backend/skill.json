@@ -1,0 +1,28 @@
+{
+  "id": "java-backend",
+  "name": "Java 后端开发",
+  "description": "用于 Java 后端面试出题；围绕 Java 核心、MySQL、Redis、Spring、系统设计和项目实战。",
+  "keywords": ["Java", "Spring", "Spring Boot", "MySQL", "Redis", "JVM", "并发", "分布式", "后端"],
+  "categories": [
+    {"key": "JAVA", "label": "Java", "priority": "core", "weight": 1.0, "ref": "java.md"},
+    {"key": "MYSQL", "label": "MySQL", "priority": "core", "weight": 1.0, "ref": "mysql.md"},
+    {"key": "REDIS", "label": "Redis", "priority": "core", "weight": 1.0, "ref": "redis.md"},
+    {"key": "SPRING", "label": "Spring", "priority": "normal", "weight": 0.9, "ref": "spring.md"},
+    {"key": "SYSTEM_DESIGN_SCENARIO", "label": "系统设计/场景题", "priority": "normal", "weight": 0.8, "ref": "system-design-scenarios.md"},
+    {"key": "PROJECT", "label": "项目经历", "priority": "always_one", "weight": 1.0}
+  ],
+  "question_focuses": [
+    "Java 语言、集合、并发、JVM 和异常处理的工程使用",
+    "MySQL 索引、事务、锁、慢查询和数据一致性",
+    "Redis 缓存模型、穿透击穿雪崩、分布式锁和淘汰策略",
+    "Spring 机制、事务边界、接口设计、稳定性和回滚方案",
+    "项目中的设计取舍、故障处理、性能优化和指标结果"
+  ],
+  "rubric_focuses": [
+    "是否从使用经验进入原理机制和边界条件",
+    "是否能给出真实故障、可观测指标和回滚方案",
+    "是否能把数据库、缓存、服务治理和业务约束串起来",
+    "是否能区分个人贡献与团队成果"
+  ],
+  "followup_style": "提问顺序遵循使用经验 -> 原理机制 -> 边界条件 -> 优化与故障。"
+}

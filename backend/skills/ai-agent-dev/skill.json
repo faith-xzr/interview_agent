@@ -1,0 +1,30 @@
+{
+  "id": "ai-agent-dev",
+  "name": "AI Agent 开发",
+  "description": "用于 AI Agent 开发岗位面试出题；覆盖 Agent 架构、LLM 调用、工具集成、MCP 协议、RAG、上下文工程与多 Agent 协作。",
+  "keywords": ["AI Agent 开发", "Agent Loop", "MCP 协议", "上下文工程", "多 Agent 协作"],
+  "categories": [
+    {"key": "AGENT_BASIS", "label": "Agent 基础", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},
+    {"key": "LLM_CALLING", "label": "LLM 调用", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},
+    {"key": "MCP_PROTOCOL", "label": "MCP 协议", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},
+    {"key": "RAG", "label": "RAG 检索增强", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},
+    {"key": "CONTEXT_ENGINEERING", "label": "上下文工程", "priority": "normal", "weight": 0.9, "ref": "ai-agent-dev.md"},
+    {"key": "MULTI_AGENT", "label": "多 Agent 协作", "priority": "normal", "weight": 0.8, "ref": "ai-agent-dev.md"},
+    {"key": "PROJECT", "label": "项目经历", "priority": "always_one", "weight": 1.0, "ref": "ai-agent-dev.md"}
+  ],
+  "question_focuses": [
+    "Agent Loop、计划、工具和状态边界如何设计",
+    "LLM 调用、Token 预算、重试和降级策略",
+    "MCP 或工具协议如何建模、鉴权、观测和测试",
+    "RAG 召回、重排、证据引用和幻觉治理",
+    "上下文压缩、短期记忆、长期记忆和隐私边界",
+    "多 Agent 协作中的任务拆分、冲突处理和评测"
+  ],
+  "rubric_focuses": [
+    "能否把 Agent 拆成 plan/state/tool/memory/retrieval/eval",
+    "能否给出真实实现细节而不是只讲概念",
+    "能否说明指标，如 TTFT、P99、召回率、Token 利用率",
+    "能否处理线上故障、循环调用、幻觉和成本延迟"
+  ],
+  "followup_style": "遵循使用经验 -> 原理机制 -> 边界故障 -> 优化权衡的梯度追问，必须落到候选人真实项目责任。"
+}

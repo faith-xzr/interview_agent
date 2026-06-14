@@ -172,6 +172,95 @@ class RequirementMatch(BaseModel):
     evidence: List[EvidenceSnippet] = Field(default_factory=list)
 
 
+class AuditEvent(BaseModel):
+    event: str
+    stage: str
+    failure_code: str
+    message: str
+    fallback_strategy: str
+    run_id: Optional[str] = None
+    candidate_id: Optional[str] = None
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    invalid_requirements: List[str] = Field(default_factory=list)
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentSkillCategory(BaseModel):
+    key: str
+    label: str
+    priority: str = "normal"
+    weight: float = 1.0
+    ref: Optional[str] = None
+
+
+class AgentSkill(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    keywords: List[str] = Field(default_factory=list)
+    categories: List[AgentSkillCategory] = Field(default_factory=list)
+    question_focuses: List[str] = Field(default_factory=list)
+    rubric_focuses: List[str] = Field(default_factory=list)
+    followup_style: str = ""
+    body: str = ""
+
+
+class AgentPlanStep(BaseModel):
+    step_id: str
+    title: str
+    tool_name: str
+    intent: str
+    status: str = "pending"
+    requires_evidence: bool = True
+
+
+class AgentPlan(BaseModel):
+    plan_id: str
+    objective: str
+    strategy: str = "code_driven_orchestration_with_llm_specialists"
+    selected_skill_ids: List[str] = Field(default_factory=list)
+    question_budget: int = 10
+    followup_policy: str = "3-5 static followups plus dynamic per-answer followup when evidence is weak."
+    evidence_requirements: List[str] = Field(default_factory=list)
+    stop_conditions: List[str] = Field(default_factory=list)
+    steps: List[AgentPlanStep] = Field(default_factory=list)
+
+
+class AgentState(BaseModel):
+    plan_id: str
+    status: str = "planned"
+    current_step_id: Optional[str] = None
+    completed_steps: List[str] = Field(default_factory=list)
+    memory_refs: List[str] = Field(default_factory=list)
+    tool_call_ids: List[str] = Field(default_factory=list)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ToolCallRecord(BaseModel):
+    call_id: str
+    tool_name: str
+    stage: str
+    status: str = "success"
+    run_id: Optional[str] = None
+    candidate_id: Optional[str] = None
+    input_summary: str = ""
+    output_summary: str = ""
+    error_message: Optional[str] = None
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    duration_ms: int = 0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RunMetadata(BaseModel):
+    jd_text_hash: str = ""
+    llm_model: str = ""
+    prompt_versions: Dict[str, str] = Field(default_factory=dict)
+    scoring_policy_version: str = "backend_score_policy@v1"
+    rubric_version: str = "dynamic_jd_rubric@v1"
+
+
 class DimensionExplanation(BaseModel):
     dimension: str
     score: float = 0
@@ -218,6 +307,92 @@ class InterviewAnswerFollowUp(BaseModel):
         return max(0, min(100, int(value)))
 
 
+class InterviewSessionQuestion(BaseModel):
+    question: str
+    focus: str = ""
+    scoring_criteria: str = ""
+    source: str = "planned"
+    question_index: int = 0
+    skill_id: Optional[str] = None
+    stage: Optional[str] = None
+
+
+class InterviewTurn(BaseModel):
+    turn_index: int
+    question: InterviewSessionQuestion
+    answer: str
+    diagnosis: InterviewAnswerFollowUp
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class InterviewFinalReport(BaseModel):
+    overall_score: int = 0
+    clarity_score: int = 0
+    depth_score: int = 0
+    evidence_consistency: str = "weak"
+    recommendation: str = "继续观察"
+    strengths: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    summary: str = ""
+    next_steps: List[str] = Field(default_factory=list)
+
+    @field_validator("overall_score", "clarity_score", "depth_score")
+    @classmethod
+    def clamp_interview_score(cls, value: int) -> int:
+        return max(0, min(100, int(value)))
+
+
+class InterviewSession(BaseModel):
+    session_id: str
+    run_id: str
+    candidate_id: str
+    mode: str = "structured"
+    direction: str = ""
+    difficulty: str = ""
+    interviewer_style: str = ""
+    skill_id: Optional[str] = None
+    skill_name: Optional[str] = None
+    flow: List[str] = Field(default_factory=list)
+    status: str = "active"
+    created_at: datetime
+    updated_at: datetime
+    current_question: Optional[InterviewSessionQuestion] = None
+    turns: List[InterviewTurn] = Field(default_factory=list)
+    final_report: Optional[InterviewFinalReport] = None
+
+
+class InterviewStartRequest(BaseModel):
+    candidate_id: str
+    mode: str = "structured"
+
+
+class InterviewTurnRequest(BaseModel):
+    candidate_answer: str
+
+
+class ModelProvider(BaseModel):
+    id: str
+    name: str
+    model: str
+    base_url: str
+    api_key_configured: bool = False
+    api_key_source: str = "none"
+    is_default: bool = False
+
+
+class ModelProviderSettingsResponse(BaseModel):
+    default_provider_id: str
+    providers: List[ModelProvider]
+
+
+class ModelProviderDefaultRequest(BaseModel):
+    provider_id: str
+
+
+class ModelProviderApiKeyRequest(BaseModel):
+    api_key: str
+
+
 class MatchReport(BaseModel):
     total_score: int
     decision: str
@@ -242,6 +417,7 @@ class CandidateReport(BaseModel):
     source_name: str
     profile: CandidateProfile
     match_report: MatchReport
+    resume_text_hash: Optional[str] = None
     parse_warnings: List[str] = Field(default_factory=list)
     extraction_facts: List[ExtractedFact] = Field(default_factory=list)
 
@@ -253,3 +429,8 @@ class RunReport(BaseModel):
     jd_extraction_facts: List[ExtractedFact] = Field(default_factory=list)
     candidates: List[CandidateReport]
     warnings: List[str] = Field(default_factory=list)
+    metadata: RunMetadata = Field(default_factory=RunMetadata)
+    audit_events: List[AuditEvent] = Field(default_factory=list)
+    agent_plan: Optional[AgentPlan] = None
+    agent_state: Optional[AgentState] = None
+    tool_calls: List[ToolCallRecord] = Field(default_factory=list)

@@ -101,6 +101,70 @@ export interface InterviewAnswerFollowUp {
   source: string;
 }
 
+export interface InterviewSessionQuestion {
+  question: string;
+  focus: string;
+  scoring_criteria: string;
+  source: string;
+  question_index: number;
+  skill_id?: string | null;
+  stage?: string | null;
+}
+
+export interface InterviewTurn {
+  turn_index: number;
+  question: InterviewSessionQuestion;
+  answer: string;
+  diagnosis: InterviewAnswerFollowUp;
+  created_at: string;
+}
+
+export interface InterviewFinalReport {
+  overall_score: number;
+  clarity_score: number;
+  depth_score: number;
+  evidence_consistency: string;
+  recommendation: string;
+  strengths: string[];
+  risks: string[];
+  summary: string;
+  next_steps: string[];
+}
+
+export interface InterviewSession {
+  session_id: string;
+  run_id: string;
+  candidate_id: string;
+  mode: string;
+  direction: string;
+  difficulty: string;
+  interviewer_style: string;
+  skill_id?: string | null;
+  skill_name?: string | null;
+  flow: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+  current_question?: InterviewSessionQuestion | null;
+  turns: InterviewTurn[];
+  final_report?: InterviewFinalReport | null;
+}
+
+export interface ModelProvider {
+  id: string;
+  name: string;
+  model: string;
+  base_url: string;
+  api_key_configured: boolean;
+  api_key_source?: "env" | "saved" | "none" | string;
+  is_default: boolean;
+}
+
+export interface ModelProviderSettingsResponse {
+  default_provider_id: string;
+  providers: ModelProvider[];
+}
+
 export interface MatchReport {
   total_score: number;
   decision: string;

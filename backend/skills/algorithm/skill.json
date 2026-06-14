@@ -1,0 +1,27 @@
+{
+  "id": "algorithm",
+  "name": "算法与数据结构",
+  "description": "用于算法面试出题；重点评估复杂度分析、边界处理、优化能力和真实理解。",
+  "keywords": ["算法", "数据结构", "复杂度", "动态规划", "二叉树", "图", "堆", "哈希", "LeetCode"],
+  "categories": [
+    {"key": "ARRAY_LINKEDLIST", "label": "数组/链表", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},
+    {"key": "HASH_HEAP_QUEUE", "label": "哈希/堆/栈/队列", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},
+    {"key": "TREE_GRAPH", "label": "树/图", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},
+    {"key": "DP", "label": "动态规划", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},
+    {"key": "GREEDY_BACKTRACK", "label": "贪心/回溯", "priority": "normal", "weight": 0.8, "ref": "algorithm-data-structures.md"},
+    {"key": "DESIGN", "label": "设计题", "priority": "normal", "weight": 0.8, "ref": "algorithm-data-structures.md"}
+  ],
+  "question_focuses": [
+    "口述建模方式、关键数据结构、核心步骤和时空复杂度",
+    "在哈希、堆、队列、树图、数组链表之间轮换考察",
+    "追问边界条件、退化场景、正确性证明和同类变体",
+    "对暴力解追问瓶颈，并要求给出可落地优化路径"
+  ],
+  "rubric_focuses": [
+    "是否能清楚建立问题模型和约束",
+    "是否能解释复杂度、边界条件和正确性",
+    "是否能从暴力解推进到可实现的优化方案",
+    "是否能区分背题套路和真实理解"
+  ],
+  "followup_style": "先让候选人口述思路，再追问边界、复杂度、优化、正确性和变体。"
+}

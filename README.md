@@ -10,7 +10,7 @@
 - PDF/DOCX/TXT 文档解析，JD 与简历文本兜底输入。
 - 图片型 PDF 简历在 macOS 本地演示环境会自动使用系统 Vision OCR 兜底解析。
 - SQLite 保存运行报告，本地 Chroma/Hashing 向量索引保存证据片段。
-- OpenAI-compatible LLM 可选；没有 `LLM_API_KEY` 时自动使用本地规则兜底。
+- OpenAI-compatible LLM 可选；没有 Provider API Key 时自动使用本地规则兜底。
 - 外部 LLM 调用前会脱敏候选人姓名、电话、邮箱和微信号。
 
 ## 五张图读懂项目
@@ -127,15 +127,24 @@ make frontend
 
 ## 可选 LLM 配置
 
-复制 `.env.example` 后设置：
+可以在设置页直接粘贴 API Key 保存到本地配置；也可以复制 `.env.example` 后用环境变量配置：
 
 ```bash
-export LLM_BASE_URL="https://api.openai.com/v1"
+export AI_BAILIAN_API_KEY="..."          # DashScope / 通义千问
+export AI_MODEL="qwen3.5-flash"
+
+export PROVIDER_DEEPSEEK_API_KEY="..."  # DeepSeek
+export PROVIDER_DEEPSEEK_MODEL="deepseek-v4-flash"
+
+export PROVIDER_KIMI_API_KEY="..."      # Kimi，可选
+export PROVIDER_GLM_API_KEY="..."       # GLM，可选
+
+export LLM_BASE_URL="https://api.openai.com/v1"  # 自定义 OpenAI Compatible，可选
 export LLM_API_KEY="..."
 export LLM_MODEL="gpt-4o-mini"
 ```
 
-DeepSeek 等兼容 OpenAI Chat Completions 的网关也可以使用相同变量。
+设置页内置通义千问、DeepSeek、Kimi、GLM 和自定义 OpenAI Compatible；本地模型服务不再作为默认选项展示。
 
 ## 验证
 

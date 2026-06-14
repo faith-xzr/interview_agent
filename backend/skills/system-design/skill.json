@@ -1,0 +1,28 @@
+{
+  "id": "system-design",
+  "name": "系统设计",
+  "description": "用于系统设计面试出题；聚焦容量估算、可用性、一致性权衡、可观测性和故障恢复。",
+  "keywords": ["系统设计", "高可用", "分布式", "缓存", "消息队列", "数据库设计", "容量估算", "架构"],
+  "categories": [
+    {"key": "HIGH_AVAILABILITY", "label": "高可用", "priority": "core", "weight": 1.0, "ref": "high-availability.md"},
+    {"key": "DISTRIBUTED", "label": "分布式", "priority": "core", "weight": 1.0, "ref": "distributed.md"},
+    {"key": "SYSTEM_DESIGN_SCENARIO", "label": "系统设计/场景题", "priority": "core", "weight": 1.0, "ref": "system-design-scenarios.md"},
+    {"key": "CACHE", "label": "缓存", "priority": "normal", "weight": 0.8, "ref": "redis.md"},
+    {"key": "DESIGN_PATTERN", "label": "设计模式", "priority": "normal", "weight": 0.7, "ref": "design-pattern.md"},
+    {"key": "MQ", "label": "消息队列", "priority": "normal", "weight": 0.8},
+    {"key": "DB_DESIGN", "label": "数据库设计", "priority": "normal", "weight": 0.8}
+  ],
+  "question_focuses": [
+    "先澄清 QPS、SLA、一致性、成本和业务约束",
+    "围绕数据流、状态流、容量估算和瓶颈定位展开",
+    "追问高可用、降级、回滚、可观测性和故障恢复",
+    "要求说明一致性 vs 延迟、成本 vs 可靠性等权衡"
+  ],
+  "rubric_focuses": [
+    "是否先澄清约束再设计方案",
+    "是否能做容量估算和关键链路瓶颈分析",
+    "是否能解释可用性、一致性、延迟和成本权衡",
+    "是否能落到数据流、状态流、故障处理和监控"
+  ],
+  "followup_style": "禁止组件罗列式问答，必须要求候选人讲清楚数据流、状态流、容量、降级和权衡。"
+}

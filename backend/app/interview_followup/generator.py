@@ -19,6 +19,24 @@ def generate_interview_answer_followup(
     candidate_answer: str,
 ) -> InterviewAnswerFollowUp:
     question = candidate.match_report.interview_questions[question_index]
+    return generate_interview_answer_followup_for_question(
+        llm,
+        jd,
+        candidate,
+        question,
+        question_index,
+        candidate_answer,
+    )
+
+
+def generate_interview_answer_followup_for_question(
+    llm: Any,
+    jd: JDProfile,
+    candidate: CandidateReport,
+    question: InterviewQuestion,
+    question_index: int,
+    candidate_answer: str,
+) -> InterviewAnswerFollowUp:
     answer = candidate_answer.strip()
     if getattr(llm, "available", False):
         payload = _call_llm(llm, jd, candidate, question, question_index, answer)

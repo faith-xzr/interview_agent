@@ -1,0 +1,26 @@
+{
+  "id": "custom-jd",
+  "name": "自定义 JD",
+  "description": "用于用户自定义 JD 的通用面试流程；以 JD 硬要求、简历证据、项目深挖和风险验证为主线。",
+  "keywords": ["自定义 JD", "JD", "岗位", "简历", "项目", "硬要求"],
+  "categories": [
+    {"key": "JD_CORE", "label": "JD 核心要求", "priority": "core", "weight": 1.0},
+    {"key": "RESUME_EVIDENCE", "label": "简历证据", "priority": "core", "weight": 1.0},
+    {"key": "PROJECT_DEEP_DIVE", "label": "项目深挖", "priority": "core", "weight": 1.0},
+    {"key": "GAP_PROBE", "label": "缺口验证", "priority": "normal", "weight": 0.9},
+    {"key": "ROLE_FIT", "label": "岗位匹配", "priority": "normal", "weight": 0.8}
+  ],
+  "question_focuses": [
+    "按用户输入 JD 的硬要求逐项验证真实覆盖度",
+    "把简历证据、抽取事实和候选人回答交叉校验",
+    "围绕最强项目追问个人贡献、技术取舍、结果指标和复盘",
+    "对评分缺口、模糊经历和风险点做反事实追问"
+  ],
+  "rubric_focuses": [
+    "是否覆盖 JD 硬要求和核心职责",
+    "是否有可核验的简历证据和项目细节",
+    "是否能说明个人贡献、量化结果和失败复盘",
+    "是否暴露出硬门槛缺失或经历不一致"
+  ],
+  "followup_style": "优先沿 JD 硬要求和简历证据追问，避免通用闲聊。"
+}

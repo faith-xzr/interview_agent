@@ -1,0 +1,14 @@
+{
+  "id": "generic-interview",
+  "name": "通用岗位面试",
+  "description": "用于没有命中特定方向时的通用 JD/简历证据面试。",
+  "keywords": ["工程师", "产品", "运营", "项目", "管理", "数据"],
+  "categories": [
+    {"key": "role_fit", "label": "岗位匹配", "priority": "core", "weight": 1.0},
+    {"key": "project_depth", "label": "项目深度", "priority": "core", "weight": 1.0},
+    {"key": "communication", "label": "沟通表达", "priority": "normal", "weight": 0.8}
+  ],
+  "question_focuses": ["围绕 JD 核心职责验证经历真实性", "围绕项目角色和结果追问细节"],
+  "rubric_focuses": ["岗位硬要求覆盖度", "项目证据可信度", "表达清晰度"],
+  "followup_style": "追问候选人的个人贡献、量化结果和上下文边界。"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "python-backend",
+  "name": "Python 后端开发",
+  "description": "用于 Python 后端面试出题；覆盖 Python 基础、数据库、Django/Flask、缓存、部署和工程落地。",
+  "keywords": ["Python", "Django", "Flask", "FastAPI", "数据库", "Redis", "缓存", "部署", "后端"],
+  "categories": [
+    {"key": "PYTHON_BASIC", "label": "Python 基础", "priority": "core", "weight": 1.0, "ref": "python-basic.md"},
+    {"key": "DATABASE", "label": "数据库", "priority": "core", "weight": 1.0, "ref": "database.md"},
+    {"key": "DJANGO_FLASK", "label": "Django/Flask", "priority": "normal", "weight": 0.9, "ref": "django-flask.md"},
+    {"key": "CACHE", "label": "缓存", "priority": "normal", "weight": 0.8, "ref": "redis.md"},
+    {"key": "SYSTEM_DESIGN_SCENARIO", "label": "系统设计/场景题", "priority": "normal", "weight": 0.8, "ref": "system-design-scenarios.md"},
+    {"key": "DEPLOY", "label": "部署", "priority": "normal", "weight": 0.7},
+    {"key": "PROJECT", "label": "项目经历", "priority": "always_one", "weight": 1.0}
+  ],
+  "question_focuses": [
+    "Python 语言机制、类型、异常、包管理和性能边界",
+    "Web 框架实践、接口设计、ORM、鉴权和中间件",
+    "数据库设计、事务、一致性、慢查询和迁移",
+    "缓存策略、异步任务、并发模型、部署和排障流程"
+  ],
+  "rubric_focuses": [
+    "是否具备独立构建和运维服务的能力",
+    "是否能从语法解释进入工程实现细节",
+    "是否能说明并发、一致性、故障恢复和监控指标",
+    "是否能描述真实线上问题和排障步骤"
+  ],
+  "followup_style": "优先考察框架实践、数据设计、缓存策略、部署经验和线上排障。"
+}

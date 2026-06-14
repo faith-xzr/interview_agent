@@ -1,0 +1,28 @@
+{
+  "id": "frontend",
+  "name": "前端工程",
+  "description": "用于前端工程面试出题；覆盖 JavaScript、React/Vue、浏览器原理、CSS、工程化和性能优化。",
+  "keywords": ["前端", "JavaScript", "TypeScript", "React", "Vue", "浏览器", "CSS", "性能优化", "工程化"],
+  "categories": [
+    {"key": "JAVASCRIPT", "label": "JavaScript", "priority": "core", "weight": 1.0, "ref": "javascript.md"},
+    {"key": "REACT_VUE", "label": "React/Vue", "priority": "core", "weight": 1.0, "ref": "react-vue.md"},
+    {"key": "BROWSER", "label": "浏览器原理", "priority": "core", "weight": 1.0, "ref": "browser.md"},
+    {"key": "CSS", "label": "CSS", "priority": "normal", "weight": 0.8},
+    {"key": "ENGINEERING", "label": "工程化", "priority": "normal", "weight": 0.8},
+    {"key": "PERFORMANCE", "label": "性能优化", "priority": "normal", "weight": 0.8},
+    {"key": "PROJECT", "label": "项目经历", "priority": "always_one", "weight": 1.0}
+  ],
+  "question_focuses": [
+    "渲染机制、状态管理、组件设计和副作用处理",
+    "浏览器事件循环、缓存、网络、性能指标和错误治理",
+    "工程化链路、构建优化、质量保障和发布回滚",
+    "结合简历追问复杂页面、线上问题和业务交付质量"
+  ],
+  "rubric_focuses": [
+    "是否能从 API 使用深入到底层机制",
+    "是否能给出 FCP/LCP、错误率、包体积等量化指标",
+    "是否能说明真实项目中的技术取舍和线上问题处理",
+    "是否能把用户体验、性能和工程成本放在一起权衡"
+  ],
+  "followup_style": "避免名词解释式提问，优先场景化追问机制、边界、指标和线上复盘。"
+}

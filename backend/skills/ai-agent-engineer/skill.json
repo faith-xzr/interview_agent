@@ -1,0 +1,26 @@
+{
+  "id": "ai-agent-engineer",
+  "name": "AI Agent 工程师",
+  "description": "面向 Agent 应用、RAG、Memory、Tool Calling、评测和可观测性的技术面试方向。",
+  "keywords": ["agent", "ai agent", "rag", "memory", "tool", "tool calling", "function calling", "llm", "评测", "可观测", "向量", "检索"],
+  "categories": [
+    {"key": "rag", "label": "RAG 与证据检索", "priority": "core", "weight": 1.0},
+    {"key": "memory", "label": "短期/长期记忆", "priority": "core", "weight": 1.0},
+    {"key": "tool_calling", "label": "工具调用与编排", "priority": "core", "weight": 1.0},
+    {"key": "evaluation", "label": "评测与可观测性", "priority": "core", "weight": 1.0},
+    {"key": "backend", "label": "后端工程化", "priority": "normal", "weight": 0.8}
+  ],
+  "question_focuses": [
+    "Agent 计划、工具调用和状态管理的边界设计",
+    "RAG 检索质量、证据引用和 hallucination 控制",
+    "短期会话记忆、长期候选人记忆和隐私边界",
+    "LLM 调用链路的 trace、eval 和失败回退策略"
+  ],
+  "rubric_focuses": [
+    "能否把 Agent 拆成 plan/state/tool/memory/retrieval/eval",
+    "能否说明 RAG 指标和证据归因",
+    "能否设计可复现、可调试的工具调用轨迹",
+    "能否在工程上处理隐私、失败回退和成本延迟"
+  ],
+  "followup_style": "优先追问架构取舍、失败案例、指标定义、证据链路和候选人的实际实现责任。"
+}

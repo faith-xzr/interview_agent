@@ -14,6 +14,7 @@ from app.schemas import (
     RequirementMatch,
     ScoreBreakdown,
 )
+from app.scoring.score_engine import compute_contribution
 
 
 PROMPT_DIR = Path(__file__).resolve().parents[2] / "prompts" / "matching"
@@ -23,6 +24,26 @@ SYSTEM_PROMPT = "你是招聘匹配评分 Rubric 设计助手。只输出 JSON�
 MATCHING_SYSTEM_PROMPT = "你是招聘候选人匹配评估助手。只输出 JSON，不要输出解释文本。"
 STATUS_VALUES = {"强匹配", "直接匹配", "相关匹配", "弱匹配", "未匹配"}
 POSITIVE_STATUSES = {"强匹配", "直接匹配"}
+
+
+def _record_failure(
+    failure_sink: Optional[List[dict[str, Any]]],
+    *,
+    stage: str,
+    failure_code: str,
+    message: str,
+    invalid_requirements: Optional[List[str]] = None,
+) -> None:
+    if failure_sink is None:
+        return
+    failure_sink.append(
+        {
+            "stage": stage,
+            "failure_code": failure_code,
+            "message": message,
+            "invalid_requirements": invalid_requirements or [],
+        }
+    )
 
 
 class ScoringRubricItem(BaseModel):
@@ -79,9 +100,16 @@ def score_candidate_with_llm(
     evidence_texts: Iterable[str],
     jd_facts: Iterable[ExtractedFact],
     extraction_facts: Iterable[ExtractedFact],
+    failure_sink: Optional[List[dict[str, Any]]] = None,
 ) -> Optional[MatchReport]:
     rubric = generate_scoring_rubric(llm, jd, jd_facts)
     if rubric is None or not rubric.items:
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code="rubric_unavailable",
+            message="LLM rubric generation returned no usable rubric items.",
+        )
         return None
 
     evidence_items = _build_evidence_references(extraction_facts, evidence_texts)
@@ -91,21 +119,35 @@ def score_candidate_with_llm(
             _build_matching_prompt(jd, candidate, rubric, evidence_items),
         )
     except Exception:
+        _record_failure(
+            failure_sink,
+            stage="requirement_matching",
+            failure_code="matching_request_failed",
+            message="LLM requirement matching request raised an exception.",
+        )
         return None
     if not isinstance(payload, dict):
+        _record_failure(
+            failure_sink,
+            stage="requirement_matching",
+            failure_code="matching_payload_not_object",
+            message="LLM requirement matching payload is not a JSON object.",
+        )
         return None
 
-    matches = _parse_requirement_matches(payload.get("matches"), rubric, evidence_items)
+    matches = _parse_requirement_matches(payload.get("matches"), rubric, evidence_items, failure_sink)
     if matches is None:
         return None
 
     dimension_explanations = _dimension_explanations(matches)
-    total_score = max(0, min(100, int(round(sum(item.contribution for item in matches)))))
+    raw_total_score = max(0, min(100, int(round(sum(item.contribution for item in matches)))))
+    total_score = _apply_score_caps(raw_total_score, matches)
+    risk_deduction = max(0, raw_total_score - total_score)
     return MatchReport(
         total_score=total_score,
         decision="",
         dimension_scores={item.dimension: round(item.score) for item in dimension_explanations},
-        score_breakdown=_score_breakdown(matches),
+        score_breakdown=_score_breakdown(matches, risk_deduction=risk_deduction),
         match_reasons=_match_reasons(matches),
         gap_reasons=_gap_reasons(matches),
         evidence_snippets=[item.snippet for item in evidence_items[:5]]
@@ -193,8 +235,15 @@ def _parse_requirement_matches(
     raw_matches: Any,
     rubric: ScoringRubric,
     evidence_items: List[EvidenceReference],
+    failure_sink: Optional[List[dict[str, Any]]] = None,
 ) -> Optional[List[RequirementMatch]]:
     if not isinstance(raw_matches, list):
+        _record_failure(
+            failure_sink,
+            stage="requirement_matching",
+            failure_code="matches_not_list",
+            message="LLM requirement matching payload does not contain a matches list.",
+        )
         return None
     raw_by_requirement = {}
     for raw in raw_matches:
@@ -204,22 +253,54 @@ def _parse_requirement_matches(
         if requirement:
             raw_by_requirement[requirement] = raw
 
+    rubric_requirements = {item.requirement for item in rubric.items}
+    unknown_requirements = sorted(set(raw_by_requirement) - rubric_requirements)
+    if unknown_requirements:
+        _record_failure(
+            failure_sink,
+            stage="requirement_matching",
+            failure_code="unknown_requirement_judgement",
+            message="LLM returned judgement for requirements outside the rubric.",
+            invalid_requirements=unknown_requirements,
+        )
+        return None
+
     matches: List[RequirementMatch] = []
     for item in rubric.items:
         raw = raw_by_requirement.get(item.requirement)
         if raw is None:
+            _record_failure(
+                failure_sink,
+                stage="requirement_matching",
+                failure_code="missing_requirement_judgement",
+                message="LLM did not return a judgement for every rubric requirement.",
+                invalid_requirements=[item.requirement],
+            )
             return None
         status = _clean_text(raw.get("status"))
         if status not in STATUS_VALUES:
+            _record_failure(
+                failure_sink,
+                stage="requirement_matching",
+                failure_code="invalid_status",
+                message="LLM returned a status outside the allowed enum.",
+                invalid_requirements=[item.requirement],
+            )
             return None
         confidence = _clamp(_coerce_score(raw.get("confidence")), 0.0, 1.0)
-        contribution = _clamp(_coerce_score(raw.get("contribution")), 0.0, item.max_score)
         if status == "未匹配":
             confidence = 0.0
-            contribution = 0.0
         evidence = _evidence_from_indexes(raw.get("evidence_indexes"), evidence_items)
         if status in POSITIVE_STATUSES and not evidence:
+            _record_failure(
+                failure_sink,
+                stage="requirement_matching",
+                failure_code="missing_evidence_for_positive_match",
+                message="LLM returned a positive match without valid evidence indexes.",
+                invalid_requirements=[item.requirement],
+            )
             return None
+        contribution = compute_contribution(item.max_score, status, confidence)
         matches.append(
             RequirementMatch(
                 dimension=item.dimension,
@@ -320,7 +401,7 @@ def _dimension_explanations(matches: List[RequirementMatch]) -> List[DimensionEx
     return explanations
 
 
-def _score_breakdown(matches: List[RequirementMatch]) -> ScoreBreakdown:
+def _score_breakdown(matches: List[RequirementMatch], risk_deduction: int = 0) -> ScoreBreakdown:
     def score_for(types: set[str]) -> int:
         return round(sum(item.contribution for item in matches if item.requirement_type in types))
 
@@ -330,8 +411,42 @@ def _score_breakdown(matches: List[RequirementMatch]) -> ScoreBreakdown:
         project_score=score_for({"responsibility", "project_depth"}),
         industry_score=score_for({"industry"}),
         education_score=score_for({"hard_requirement"}),
-        risk_deduction=0,
+        risk_deduction=risk_deduction,
     )
+
+
+def _apply_score_caps(total: int, matches: List[RequirementMatch]) -> int:
+    capped_total = total
+    core_matches = [
+        item
+        for item in matches
+        if item.requirement_type in {"core_skill", "required_skill", "core_tool"}
+    ]
+    if core_matches:
+        missing_core = [
+            item for item in core_matches if item.status in {"未匹配", "弱匹配"}
+        ]
+        if len(missing_core) / len(core_matches) >= 0.5:
+            capped_total = min(capped_total, 69)
+
+    missing_hard_gates = [
+        item
+        for item in matches
+        if item.requirement_type == "hard_requirement"
+        and item.status in {"未匹配", "弱匹配"}
+    ]
+    if missing_hard_gates:
+        capped_total = min(capped_total, 69)
+
+    project_depth_matches = [
+        item for item in matches if item.requirement_type == "project_depth"
+    ]
+    if project_depth_matches and not any(
+        item.status in POSITIVE_STATUSES for item in project_depth_matches
+    ):
+        capped_total = min(capped_total, 79)
+
+    return capped_total
 
 
 def _match_reasons(matches: List[RequirementMatch]) -> List[str]:

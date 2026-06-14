@@ -1,5 +1,7 @@
 import asyncio
+import hashlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 import time
@@ -11,6 +13,7 @@ from app.config import Settings
 from app.main import create_app
 from app.pipeline import RecruitingPipeline
 from app.schemas import FollowUpQuestion, InterviewQuestion, JDProfile, MatchReport, RunReport, ScoreBreakdown
+from app.storage import RunStorage
 
 
 def make_client(tmp_path):
@@ -117,6 +120,250 @@ def test_answer_followup_generates_question_from_candidate_answer(tmp_path):
     assert "具体" in payload["followup_question"] or "个人" in payload["followup_question"]
     assert payload["clarity_score"] < 70
     assert any("量化" in issue or "个人" in issue for issue in payload["issues"])
+
+
+def test_interview_session_runs_turns_and_final_report(tmp_path):
+    client = make_client(tmp_path)
+    run_response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "AI 产品经理，负责 Agent 应用落地，要求 RAG 评估、需求拆解和跨团队推进经验。",
+            "resume_texts": "小周\n项目经历：企业级智能助手项目，负责 RAG 召回评估、需求拆解和上线验收。",
+        },
+    )
+    run_report = run_response.json()
+    candidate_id = run_report["candidates"][0]["candidate_id"]
+
+    start_response = client.post(
+        f"/api/runs/{run_report['run_id']}/interviews",
+        json={"candidate_id": candidate_id},
+    )
+
+    assert start_response.status_code == 200
+    session = start_response.json()
+    assert session["run_id"] == run_report["run_id"]
+    assert session["candidate_id"] == candidate_id
+    assert session["status"] == "active"
+    assert session["current_question"]["question"]
+    assert session["turns"] == []
+
+    turn_response = client.post(
+        f"/api/interviews/{session['session_id']}/turns",
+        json={"candidate_answer": "我参与了 RAG 召回评估，主要看召回率和上线验收，整体效果还不错。"},
+    )
+
+    assert turn_response.status_code == 200
+    updated = turn_response.json()
+    assert len(updated["turns"]) == 1
+    assert updated["turns"][0]["diagnosis"]["followup_question"]
+    assert updated["turns"][0]["diagnosis"]["clarity_score"] < 100
+    assert updated["current_question"]["question"]
+
+    persisted_response = client.get(f"/api/interviews/{session['session_id']}")
+
+    assert persisted_response.status_code == 200
+    assert len(persisted_response.json()["turns"]) == 1
+
+    report_response = client.post(f"/api/interviews/{session['session_id']}/final-report")
+
+    assert report_response.status_code == 200
+    completed = report_response.json()
+    assert completed["status"] == "completed"
+    assert completed["final_report"]["overall_score"] >= 0
+    assert completed["final_report"]["recommendation"]
+    assert completed["final_report"]["summary"]
+
+
+def test_run_and_interview_records_are_listed_and_deletable(tmp_path):
+    client = make_client(tmp_path)
+    run_response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 服务建设。",
+            "resume_texts": "王五\n5年 Python 后端经验，做过 FastAPI 服务。",
+        },
+    )
+    assert run_response.status_code == 200
+    run_report = run_response.json()
+    candidate_id = run_report["candidates"][0]["candidate_id"]
+
+    runs_response = client.get("/api/runs")
+
+    assert runs_response.status_code == 200
+    runs_payload = runs_response.json()
+    assert runs_payload[0]["run_id"] == run_report["run_id"]
+    assert runs_payload[0]["jd_profile"]["job_title"]
+
+    start_response = client.post(
+        f"/api/runs/{run_report['run_id']}/interviews",
+        json={
+            "candidate_id": candidate_id,
+            "mode": "text:Python 后端开发:mid:friendly_hr",
+        },
+    )
+    assert start_response.status_code == 200
+    session = start_response.json()
+    assert session["direction"] == "Python 后端开发"
+    assert session["difficulty"] == "mid"
+    assert session["interviewer_style"] == "friendly_hr"
+    assert session["skill_id"] == "python-backend"
+    assert session["flow"][:3] == ["Python 基础", "数据库", "Django/Flask"]
+    assert session["current_question"]["skill_id"] == "python-backend"
+    assert session["current_question"]["source"] == "skill_planned"
+
+    sessions_response = client.get("/api/interviews")
+
+    assert sessions_response.status_code == 200
+    sessions_payload = sessions_response.json()
+    assert sessions_payload[0]["session_id"] == session["session_id"]
+    assert sessions_payload[0]["mode"] == "text:Python 后端开发:mid:friendly_hr"
+
+    run_sessions_response = client.get(f"/api/interviews?run_id={run_report['run_id']}")
+
+    assert run_sessions_response.status_code == 200
+    assert [item["session_id"] for item in run_sessions_response.json()] == [session["session_id"]]
+
+    delete_response = client.delete(f"/api/interviews/{session['session_id']}")
+
+    assert delete_response.status_code == 204
+    assert client.get(f"/api/interviews/{session['session_id']}").status_code == 404
+    assert client.get("/api/interviews").json() == []
+
+
+def test_model_provider_settings_can_be_read_and_switched(tmp_path):
+    client = make_client(tmp_path)
+
+    settings_response = client.get("/api/settings/model-providers")
+
+    assert settings_response.status_code == 200
+    payload = settings_response.json()
+    assert payload["default_provider_id"] == "openai-compatible"
+    assert [provider["id"] for provider in payload["providers"]] == [
+        "dashscope",
+        "deepseek",
+        "kimi",
+        "glm",
+        "openai-compatible",
+    ]
+    assert "local" not in [provider["id"] for provider in payload["providers"]]
+    openai_provider = next(provider for provider in payload["providers"] if provider["id"] == "openai-compatible")
+    assert openai_provider["is_default"] is True
+    assert openai_provider["api_key_configured"] is False
+
+    switch_response = client.put(
+        "/api/settings/model-providers/default",
+        json={"provider_id": "dashscope"},
+    )
+
+    assert switch_response.status_code == 200
+    switched = switch_response.json()
+    assert switched["default_provider_id"] == "dashscope"
+    assert next(provider for provider in switched["providers"] if provider["id"] == "dashscope")["is_default"] is True
+
+    health_response = client.get("/api/health")
+
+    assert health_response.status_code == 200
+    assert health_response.json()["model_provider"] == "dashscope"
+    assert health_response.json()["llm_model"] == "qwen3.5-flash"
+
+
+def test_deepseek_legacy_llm_env_maps_to_deepseek_provider(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key="secret",
+        llm_base_url="https://api.deepseek.com/v1",
+        llm_model="deepseek-v4-flash",
+    )
+    client = TestClient(create_app(settings))
+
+    settings_response = client.get("/api/settings/model-providers")
+
+    assert settings_response.status_code == 200
+    payload = settings_response.json()
+    assert payload["default_provider_id"] == "deepseek"
+    deepseek_provider = next(provider for provider in payload["providers"] if provider["id"] == "deepseek")
+    openai_provider = next(provider for provider in payload["providers"] if provider["id"] == "openai-compatible")
+    assert deepseek_provider["model"] == "deepseek-v4-flash"
+    assert deepseek_provider["api_key_configured"] is True
+    assert openai_provider["base_url"] == "https://api.openai.com/v1"
+    assert openai_provider["api_key_configured"] is False
+    assert client.get("/api/health").json()["model_provider"] == "deepseek"
+
+
+def test_legacy_openai_default_setting_migrates_to_known_deepseek_provider(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key="secret",
+        llm_base_url="https://api.deepseek.com/v1",
+        llm_model="deepseek-v4-flash",
+    )
+    RunStorage(settings.database_path).set_setting("default_model_provider_id", "openai-compatible")
+
+    client = TestClient(create_app(settings))
+
+    payload = client.get("/api/settings/model-providers").json()
+    assert payload["default_provider_id"] == "deepseek"
+    assert client.get("/api/health").json()["model_provider"] == "deepseek"
+    assert RunStorage(settings.database_path).get_setting("default_model_provider_id") == "deepseek"
+
+
+def test_model_provider_api_key_can_be_saved_from_settings_page(tmp_path):
+    client = make_client(tmp_path)
+
+    save_response = client.put(
+        "/api/settings/model-providers/deepseek/api-key",
+        json={"api_key": "sk-direct-deepseek"},
+    )
+
+    assert save_response.status_code == 200
+    saved = save_response.json()
+    deepseek_provider = next(provider for provider in saved["providers"] if provider["id"] == "deepseek")
+    assert deepseek_provider["api_key_configured"] is True
+    assert deepseek_provider["api_key_source"] == "saved"
+
+    switch_response = client.put(
+        "/api/settings/model-providers/default",
+        json={"provider_id": "deepseek"},
+    )
+
+    assert switch_response.status_code == 200
+    assert client.get("/api/health").json()["llm_enabled"] is True
+    stored_key = RunStorage(tmp_path / "demo.sqlite3").get_setting("model_provider_api_key:deepseek")
+    assert stored_key == "sk-direct-deepseek"
+
+
+def test_model_provider_api_key_rejects_blank_or_unknown_provider(tmp_path):
+    client = make_client(tmp_path)
+
+    blank_response = client.put(
+        "/api/settings/model-providers/deepseek/api-key",
+        json={"api_key": "   "},
+    )
+    missing_response = client.put(
+        "/api/settings/model-providers/missing/api-key",
+        json={"api_key": "sk-any"},
+    )
+
+    assert blank_response.status_code == 400
+    assert "API Key" in blank_response.json()["detail"]
+    assert missing_response.status_code == 400
+    assert "未知模型服务" in missing_response.json()["detail"]
+
+
+def test_model_provider_switch_rejects_unknown_provider(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.put(
+        "/api/settings/model-providers/default",
+        json={"provider_id": "missing"},
+    )
+
+    assert response.status_code == 400
+    assert "未知模型服务" in response.json()["detail"]
 
 
 def test_health_responds_while_run_pipeline_is_processing(tmp_path, monkeypatch):
@@ -445,7 +692,6 @@ Midjourney | Runway
                         "requirement": "熟练运用 ChatGPT",
                         "status": "未匹配",
                         "confidence": 0,
-                        "contribution": 0,
                         "reason": "简历未明确覆盖 ChatGPT 使用经验",
                         "evidence_indexes": [],
                     },
@@ -453,7 +699,6 @@ Midjourney | Runway
                         "requirement": "能直接使用 Midjourney 产出视觉素材",
                         "status": "强匹配",
                         "confidence": 0.95,
-                        "contribution": 19,
                         "reason": "项目经历直接说明使用 Midjourney 产出视觉素材",
                         "evidence_indexes": [0],
                     },
@@ -461,7 +706,6 @@ Midjourney | Runway
                         "requirement": "能使用 Runway 等 AI 工具辅助文案",
                         "status": "相关匹配",
                         "confidence": 0.8,
-                        "contribution": 9,
                         "reason": "简历展示 Runway 辅助短视频脚本经验",
                         "evidence_indexes": [0],
                     },
@@ -469,7 +713,6 @@ Midjourney | Runway
                         "requirement": "能沉淀 AI 内容 SOP",
                         "status": "未匹配",
                         "confidence": 0,
-                        "contribution": 0,
                         "reason": "简历未出现 SOP 沉淀证据",
                         "evidence_indexes": [],
                     },
@@ -477,7 +720,6 @@ Midjourney | Runway
                         "requirement": "有成功自媒体案例或 KOL 经历",
                         "status": "直接匹配",
                         "confidence": 0.9,
-                        "contribution": 16,
                         "reason": "简历有 KOL 合作案例证据",
                         "evidence_indexes": [1],
                     },
@@ -489,14 +731,135 @@ Midjourney | Runway
     report = pipeline.run(jd_text, [("小林.txt", resume_text)])
 
     candidate = report.candidates[0]
-    assert candidate.match_report.total_score == 44
-    assert candidate.match_report.dimension_scores["AIGC工具生态"] == 28
+    assert candidate.match_report.total_score == 42
+    assert candidate.match_report.dimension_scores["AIGC工具生态"] == 26
     assert any(
         item.dimension == "内容生产方法" and item.requirement == "能沉淀 AI 内容 SOP"
         for item in candidate.match_report.requirement_matches
     )
     stored = pipeline.get_run(report.run_id)
     assert stored.candidates[0].match_report.dimension_scores["平台与案例"] == 16
+
+
+def test_pipeline_stores_hashes_model_and_prompt_versions(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = "Python 后端工程师，负责 FastAPI 和 RAG。"
+    resume_text = "小王\n项目经历\n• FastAPI RAG 检索系统。"
+
+    report = pipeline.run(jd_text, [("小王.txt", resume_text)])
+
+    assert report.metadata.jd_text_hash == hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
+    assert report.metadata.llm_model == "demo-offline"
+    assert report.metadata.scoring_policy_version == "backend_score_policy@v1"
+    assert "requirement_matching" in report.metadata.prompt_versions
+    candidate = report.candidates[0]
+    assert candidate.resume_text_hash == hashlib.sha256(resume_text.encode("utf-8")).hexdigest()
+    stored = pipeline.get_run(report.run_id)
+    assert stored.metadata.jd_text_hash == report.metadata.jd_text_hash
+    assert stored.candidates[0].resume_text_hash == candidate.resume_text_hash
+
+
+def test_pipeline_logs_and_audits_llm_matching_fallback(tmp_path, caplog, monkeypatch):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "key_points": [
+                    {
+                        "topic": "核心职责",
+                        "summary": "有 RAG / Agent 系统落地经验",
+                        "evidence": "有 RAG / Agent 系统落地经验",
+                        "importance": "high",
+                        "category": "responsibility",
+                    }
+                ]
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "projects": ["RAG 项目"],
+                    "skills": ["RAG"],
+                },
+                "facts": [
+                    {
+                        "label": "项目经验",
+                        "category": "project",
+                        "summary": "RAG 项目",
+                        "evidence": "• RAG 项目",
+                        "section": "projects",
+                        "importance": "high",
+                    }
+                ],
+            },
+            {
+                "rubric": [
+                    {
+                        "dimension": "项目深度",
+                        "requirement": "有 RAG / Agent 系统落地经验",
+                        "requirement_type": "project_depth",
+                        "max_score": 100,
+                        "priority": "must_have",
+                    }
+                ]
+            },
+            {
+                "matches": [
+                    {
+                        "requirement": "有 RAG / Agent 系统落地经验",
+                        "status": "强匹配",
+                        "confidence": 0.9,
+                        "reason": "模型声称强匹配，但没有引用证据",
+                        "evidence_indexes": [],
+                    }
+                ]
+            },
+        ]
+    )
+
+    def low_fallback(*args, **kwargs):
+        return MatchReport(
+            total_score=39,
+            decision="",
+            dimension_scores={},
+            score_breakdown=ScoreBreakdown(),
+            match_reasons=["fallback"],
+            gap_reasons=["fallback"],
+        )
+
+    monkeypatch.setattr("app.pipeline.score_candidate", low_fallback)
+    caplog.set_level(logging.WARNING)
+
+    report = pipeline.run(
+        "Agent 工程师，需要有 RAG / Agent 系统落地经验。",
+        [("小王.txt", "小王\n项目经历\n• RAG 项目")],
+    )
+
+    assert "scoring.llm_matching_invalid" in caplog.text
+    assert "missing_evidence_for_positive_match" in caplog.text
+    assert report.audit_events
+    event = report.audit_events[0]
+    assert event.event == "scoring.llm_matching_invalid"
+    assert event.failure_code == "missing_evidence_for_positive_match"
+    assert event.fallback_strategy == "local_rule_scorer"
+    assert report.candidates[0].match_report.total_score == 39
 
 
 def test_pipeline_skips_question_materials_when_match_score_is_below_40(tmp_path, monkeypatch):
