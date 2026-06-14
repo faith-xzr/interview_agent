@@ -84,9 +84,7 @@ def create_app(settings: Settings = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="JD 内容不能为空，请上传 JD 文件或粘贴 JD 文本。")
         if not resumes:
             raise HTTPException(status_code=400, detail="至少需要一份有效简历内容。")
-        report = await run_in_threadpool(pipeline.run, jd_content, resumes)
-        report.warnings.extend(warnings)
-        pipeline.storage.save_run(report)
+        report = await run_in_threadpool(pipeline.run, jd_content, resumes, warnings)
         return report
 
     @app.get("/api/runs")

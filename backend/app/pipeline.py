@@ -1,6 +1,6 @@
 from datetime import datetime
 import hashlib
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from app.agent.planner import (
@@ -45,9 +45,14 @@ class RecruitingPipeline:
         self.llm = LLMClient(settings.llm_base_url, settings.llm_api_key, settings.llm_model)
         self.skill_repository = SkillRepository(settings.skills_dir)
 
-    def run(self, jd_text: str, resumes: List[Tuple[str, str]]) -> RunReport:
+    def run(
+        self,
+        jd_text: str,
+        resumes: List[Tuple[str, str]],
+        initial_warnings: Optional[List[str]] = None,
+    ) -> RunReport:
         run_id = uuid4().hex
-        warnings: List[str] = []
+        warnings: List[str] = list(initial_warnings or [])
         audit_events = []
         tool_recorder = ToolRecorder(run_id)
         metadata = RunMetadata(

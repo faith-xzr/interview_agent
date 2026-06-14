@@ -83,6 +83,29 @@ def test_run_pipeline_without_llm_returns_ranked_report_and_export(tmp_path):
     assert json.loads(export_response.content)["run_id"] == report["run_id"]
 
 
+def test_create_run_persists_report_once(tmp_path, monkeypatch):
+    save_calls = []
+    original_save_run = RunStorage.save_run
+
+    def spy_save_run(self, report):
+        save_calls.append(report.run_id)
+        return original_save_run(self, report)
+
+    monkeypatch.setattr(RunStorage, "save_run", spy_save_run)
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 服务建设。",
+            "resume_texts": "王五\n5年 Python 后端经验，做过 FastAPI 服务。",
+        },
+    )
+
+    assert response.status_code == 200
+    assert save_calls == [response.json()["run_id"]]
+
+
 def test_run_pipeline_rejects_empty_resume_input(tmp_path):
     client = make_client(tmp_path)
 
