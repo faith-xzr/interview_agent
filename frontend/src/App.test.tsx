@@ -740,7 +740,7 @@ describe("App", () => {
     expect(screen.queryByText("追问来源证据 1")).not.toBeInTheDocument();
   });
 
-  test("shows skipped question generation state for candidates below score threshold", async () => {
+  test("shows skipped question generation state when backend returns no interview questions", async () => {
     const lowScoreReport = JSON.parse(JSON.stringify(demoReport));
     lowScoreReport.candidates[0].match_report.total_score = 39;
     lowScoreReport.candidates[0].match_report.interview_questions = [];
@@ -762,11 +762,11 @@ describe("App", () => {
     await screen.findByText("候选人总览");
 
     await user.click(screen.getByRole("button", { name: "试题生成" }));
-    expect(screen.getByText("匹配分低于 40，已跳过面试题生成。")).toBeInTheDocument();
+    expect(screen.getByText("当前候选人未生成面试题，已跳过面试题展示。")).toBeInTheDocument();
     expect(screen.queryByText("面试问题 1")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
-    expect(screen.getByText("匹配分低于 40，建议先完成岗位匹配审核后再开始 AI 面试。")).toBeInTheDocument();
+    expect(screen.getByText("当前候选人未生成面试题，建议先完成岗位匹配审核后再开始 AI 面试。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "开始 AI 面试" })).not.toBeInTheDocument();
   });
 

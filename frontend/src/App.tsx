@@ -89,7 +89,6 @@ const DETAIL_VIEWS: Array<{ id: ResultView; label: string }> = [
   { id: "matching", label: "智能匹配打分" },
   { id: "questions", label: "试题生成" }
 ];
-const QUESTION_MATERIAL_MIN_SCORE = 40;
 const INTERVIEW_DIRECTIONS = [
   "AI Agent 开发",
   "算法与数据结构",
@@ -631,7 +630,7 @@ function MockInterviewWorkspace({
   const [difficulty, setDifficulty] = useState<InterviewDifficulty>("mid");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle>("friendly_hr");
   const canStartInterview = selectedCandidate
-    ? !shouldSkipQuestionMaterials(selectedCandidate.match_report)
+    ? hasQuestionMaterials(selectedCandidate.match_report)
     : false;
 
   return (
@@ -735,7 +734,7 @@ function MockInterviewWorkspace({
       ) : report && selectedCandidate ? (
         <div className="card empty-state compact-empty">
           <h2>暂不建议开始模拟面试</h2>
-          <p>匹配分低于 40，建议先完成岗位匹配审核后再开始 AI 面试。</p>
+          <p>当前候选人未生成面试题，建议先完成岗位匹配审核后再开始 AI 面试。</p>
         </div>
       ) : (
         <div className="card empty-state compact-empty">
@@ -1280,8 +1279,8 @@ function CandidateDetail({
       {view === "questions" ? (
         <section className="detail-section">
           <h3>面试问题</h3>
-          {shouldSkipQuestionMaterials(report) ? (
-            <p className="empty-facts">匹配分低于 40，已跳过面试题生成。</p>
+          {!hasQuestionMaterials(report) ? (
+            <p className="empty-facts">当前候选人未生成面试题，已跳过面试题展示。</p>
           ) : (
             <ol className="question-list">
               {report.interview_questions.map((item, index) => (
@@ -1760,8 +1759,8 @@ function shouldPreferGapSummary(report: MatchReport) {
   return report.total_score < 60 || !hasStrongEvidence;
 }
 
-function shouldSkipQuestionMaterials(report: MatchReport) {
-  return report.total_score < QUESTION_MATERIAL_MIN_SCORE;
+function hasQuestionMaterials(report: MatchReport) {
+  return report.interview_questions.length > 0;
 }
 
 const SECTION_LABELS: Record<string, string> = {

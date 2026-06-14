@@ -19,6 +19,7 @@ from app.extraction.resume_extractor import extract_resume_profile
 from app.fallback_ai import extract_jd_profile
 from app.followups import generate_followups
 from app.llm_client import LLMClient
+from app.policies import QUESTION_MATERIAL_MIN_SCORE
 from app.privacy import mask_pii, restore_pii_in_data
 from app.question_generation import generate_interview_questions
 from app.schemas import CandidateProfile, CandidateReport, ExtractedFact, JDProfile, RunMetadata, RunReport
@@ -27,7 +28,6 @@ from app.skills import SkillRepository, select_skills_for_jd
 from app.storage import RunStorage
 from app.vector_store import VectorStore
 
-QUESTION_MATERIAL_MIN_SCORE = 40
 PROMPT_VERSIONS = {
     "jd_extraction": "jd_requirements@2026-06-13",
     "resume_extraction": "resume_profile@2026-06-13",
