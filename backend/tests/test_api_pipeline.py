@@ -400,7 +400,7 @@ def test_health_responds_while_run_pipeline_is_processing(tmp_path, monkeypatch)
         enable_chroma=False,
     )
 
-    def slow_run(self, jd_text, resumes):
+    def slow_run(self, jd_text, resumes, initial_warnings=None):
         time.sleep(0.8)
         return RunReport(
             run_id="slow-run",
