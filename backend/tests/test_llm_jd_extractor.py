@@ -8,10 +8,12 @@ class CapturingLLM:
         self.payload = payload
         self.system_prompt = ""
         self.user_prompt = ""
+        self.kwargs = {}
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
+        self.kwargs = kwargs
         return self.payload
 
 
@@ -50,6 +52,7 @@ def test_llm_jd_extractor_uses_top_level_job_title_for_profile():
     assert PROMPT_PATH.exists()
     assert '"job_title"' in llm.user_prompt
     assert "岗位名称" in llm.user_prompt
+    assert llm.kwargs["timeout"] == 90
     assert profile.job_title == "高级推荐系统后端工程师"
     assert any(fact.value == "负责推荐平台 API 建设和推荐链路稳定性优化" for fact in facts)
 

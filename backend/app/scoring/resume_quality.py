@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import CandidateProfile, ExtractedFact, ResumeQualityReport, ResumeQualityScoreDetail, ResumeQualitySuggestion
 
 
@@ -50,7 +51,14 @@ TECH_DEPTH_KEYWORDS = {
 METRIC_PATTERN = re.compile(r"\b\d+(?:\.\d+)?%?\b|\d+\s*(?:万|千|亿|ms|s|秒|分钟|小时|天|人|页|次|单|条|GB|MB)", re.I)
 
 
-def _record_failure(failure_sink: Optional[list[dict[str, Any]]], *, stage: str, failure_code: str, message: str) -> None:
+def _record_failure(
+    failure_sink: Optional[list[dict[str, Any]]],
+    *,
+    stage: str,
+    failure_code: str,
+    message: str,
+    details: Optional[dict[str, Any]] = None,
+) -> None:
     if failure_sink is None:
         return
     failure_sink.append(
@@ -59,6 +67,7 @@ def _record_failure(failure_sink: Optional[list[dict[str, Any]]], *, stage: str,
             "failure_code": failure_code,
             "message": message,
             "invalid_requirements": [],
+            "details": details or {},
         }
     )
 
@@ -266,18 +275,32 @@ def score_resume_quality_with_llm(
         return None
     try:
         prompt_payload = USER_PROMPT_TEMPLATE.replace("{resumeText}", resume_text)
-        payload = llm.complete_json(SYSTEM_PROMPT, prompt_payload)
+        payload = llm.complete_json(
+            SYSTEM_PROMPT,
+            prompt_payload,
+            timeout=LLM_JSON_TIMEOUT_SECONDS,
+        )
         if not isinstance(payload, dict):
-            raise ValueError("LLM returned non-json payload")
+            raise ValueError(_llm_failure_reason(llm, payload))
         return _build_from_llm_payload(payload)
     except Exception as exc:
         _record_failure(
             failure_sink,
             stage="resume_quality",
-            failure_code="llm_resume_quality_invalid",
+            failure_code=str(exc),
             message=str(exc),
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
         )
         return None
+
+
+def _llm_failure_reason(llm, payload: Any) -> str:
+    last_error = getattr(llm, "last_error", None)
+    if last_error:
+        return str(last_error)
+    if payload is None:
+        return "llm_returned_none"
+    return "invalid_llm_response"
 
 
 def score_resume_quality(

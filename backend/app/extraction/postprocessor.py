@@ -2,6 +2,7 @@ from typing import Any, Iterable, List, Tuple, TypeVar
 
 from pydantic import BaseModel, Field
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import CandidateProfile, ExtractedFact, JDProfile
 from app.text_utils import unique_preserve_order
 
@@ -27,6 +28,7 @@ def postprocess_extraction(
     payload = llm.complete_json(
         "你是招聘结构化抽取后处理助手，只输出 JSON。所有 facts 必须来自原文 evidence，禁止编造。",
         _build_prompt(text, profile, facts),
+        timeout=LLM_JSON_TIMEOUT_SECONDS,
     )
     if not payload:
         warnings.append(f"{label} 的 LLM 抽取后处理失败，已使用本地规则结果。")

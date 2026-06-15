@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import (
     CandidateReport,
     InterviewAnswerFollowUp,
@@ -86,7 +87,7 @@ def _call_llm(
         json.dumps(context, ensure_ascii=False, indent=2),
     )
     try:
-        payload = llm.complete_json(SYSTEM_PROMPT, prompt)
+        payload = llm.complete_json(SYSTEM_PROMPT, prompt, timeout=LLM_JSON_TIMEOUT_SECONDS)
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None

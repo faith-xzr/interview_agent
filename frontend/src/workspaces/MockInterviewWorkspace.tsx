@@ -1,7 +1,6 @@
 import {
   AlertCircle,
   ArrowUpRight,
-  Bot,
   FileText,
   HeartHandshake,
   Loader2,
@@ -59,20 +58,22 @@ export function MockInterviewWorkspace({
   report,
   selectedCandidate,
   onSelectCandidate,
-  onSessionChange
+  onSessionChange,
+  resumeSession,
+  onResumeSessionConsumed
 }: {
   report: RunReport | null;
   selectedCandidate: CandidateReport | null;
   onSelectCandidate: (id: string) => void;
   onSessionChange: (session: InterviewSession) => void;
+  resumeSession?: InterviewSession | null;
+  onResumeSessionConsumed?: () => void;
 }) {
   const [mode, setMode] = useState<InterviewMode>("text");
   const [activeVoiceSession, setActiveVoiceSession] = useState<InterviewSession | null>(null);
   const [difficulty, setDifficulty] = useState<InterviewDifficulty>("mid");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle>("friendly_hr");
   const [skillRoute, setSkillRoute] = useState<SkillRouteResult | null>(null);
-  const [routeLoading, setRouteLoading] = useState(false);
-  const [routeError, setRouteError] = useState<string | null>(null);
   const canStartInterview = selectedCandidate
     ? hasQuestionMaterials(selectedCandidate.match_report)
     : false;
@@ -80,26 +81,18 @@ export function MockInterviewWorkspace({
   useEffect(() => {
     let cancelled = false;
     setSkillRoute(null);
-    setRouteError(null);
     if (!report) {
-      setRouteLoading(false);
       return;
     }
-    setRouteLoading(true);
     getSkillRoute(report.run_id)
       .then((result) => {
         if (!cancelled) {
           setSkillRoute(result);
         }
       })
-      .catch((err) => {
+      .catch(() => {
         if (!cancelled) {
-          setRouteError(err instanceof Error ? err.message : "JD skill 路由失败。");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRouteLoading(false);
+          setSkillRoute(null);
         }
       });
     return () => {
@@ -116,6 +109,25 @@ export function MockInterviewWorkspace({
       setActiveVoiceSession(null);
     }
   }, [selectedCandidate?.candidate_id]);
+
+  useEffect(() => {
+    if (!resumeSession || !report || !selectedCandidate) {
+      return;
+    }
+    if (resumeSession.run_id !== report.run_id || resumeSession.candidate_id !== selectedCandidate.candidate_id) {
+      return;
+    }
+    setDifficulty(coerceDifficulty(resumeSession.difficulty));
+    setInterviewerStyle(coerceInterviewerStyle(resumeSession.interviewer_style));
+    if (isVoiceInterviewMode(resumeSession.mode)) {
+      setMode("voice");
+      setActiveVoiceSession(resumeSession);
+      onResumeSessionConsumed?.();
+      return;
+    }
+    setMode("text");
+    setActiveVoiceSession(null);
+  }, [resumeSession?.session_id, resumeSession?.updated_at, report?.run_id, selectedCandidate?.candidate_id]);
 
   function syncVoiceSession(nextSession: InterviewSession) {
     setActiveVoiceSession((current) => (current?.session_id === nextSession.session_id ? nextSession : current));
@@ -153,15 +165,6 @@ export function MockInterviewWorkspace({
                   onClick={() => setMode("voice")}
                 />
               </div>
-            </ConfigSection>
-
-            <ConfigSection title="JD 自动路由调试">
-              <SkillRouteDebugPanel
-                jobTitle={report?.jd_profile.job_title ?? "暂无 JD 分组"}
-                loading={routeLoading}
-                route={skillRoute}
-                error={routeError}
-              />
             </ConfigSection>
 
             <ConfigSection title="难度">
@@ -222,6 +225,8 @@ export function MockInterviewWorkspace({
                 config={{ mode, difficulty, interviewerStyle, skillRoute }}
                 onSessionChange={syncVoiceSession}
                 onStartVoiceSession={setActiveVoiceSession}
+                resumeSession={resumeSession}
+                onResumeSessionConsumed={onResumeSessionConsumed}
               />
             </section>
           ) : report && selectedCandidate ? (
@@ -279,73 +284,13 @@ function OptionCard({
   );
 }
 
-function SkillRouteDebugPanel({
-  error,
-  jobTitle,
-  loading,
-  route
-}: {
-  error: string | null;
-  jobTitle: string;
-  loading: boolean;
-  route: SkillRouteResult | null;
-}) {
-  return (
-    <div className="skill-route-panel">
-      <div className="skill-route-heading">
-        <span className="option-icon"><Bot size={20} aria-hidden="true" /></span>
-        <div>
-          <strong>{route ? route.route_result : jobTitle}</strong>
-          <small>{loading ? "正在根据 JD 自动匹配 skill..." : "基于简历管理中的 JD 分组自动路由"}</small>
-        </div>
-      </div>
-      {route ? (
-        <>
-          <div className="route-debug-grid">
-            <RouteDebugItem label="岗位名称" value={route.position_name} />
-            <RouteDebugItem label="路由结果" value={route.route_result} />
-            <RouteDebugItem label="Skill" value={`${route.skill_name} (${route.skill_id})`} />
-            <RouteDebugItem label="置信度" value={`${Math.round(route.confidence * 100)}%`} />
-            <RouteDebugItem label="来源" value={routeSourceLabel(route.source)} />
-          </div>
-          <p className="route-reason">{route.reason}</p>
-        </>
-      ) : error ? (
-        <div className="route-warning">
-          <AlertCircle size={16} aria-hidden="true" />
-          <span>{error} 开始面试时将由后端按 JD 兜底。</span>
-        </div>
-      ) : (
-        <div className="route-placeholder">
-          {loading ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <Bot size={16} aria-hidden="true" />}
-          <span>{loading ? "路由中" : "等待选择 JD 分组"}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RouteDebugItem({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="route-debug-item">
-      <small>{label}</small>
-      <strong>{value}</strong>
-    </span>
-  );
-}
-
-function routeSourceLabel(source: string) {
-  if (source === "llm") return "模型路由";
-  if (source === "keyword") return "关键词兜底";
-  if (source === "fallback") return "通用兜底";
-  return source || "未知";
-}
-
 function InterviewRoom({
   candidate,
   config,
   onSessionChange,
   onStartVoiceSession,
+  resumeSession,
+  onResumeSessionConsumed,
   runId
 }: {
   candidate: CandidateReport;
@@ -357,6 +302,8 @@ function InterviewRoom({
   };
   onSessionChange?: (session: InterviewSession) => void;
   onStartVoiceSession?: (session: InterviewSession) => void;
+  resumeSession?: InterviewSession | null;
+  onResumeSessionConsumed?: () => void;
   runId: string;
 }) {
   const [session, setSession] = useState<InterviewSession | null>(null);
@@ -394,6 +341,35 @@ function InterviewRoom({
       recognitionRef.current = null;
     }
   }, [candidate.candidate_id, runId]);
+
+  useEffect(() => {
+    if (
+      !resumeSession
+      || isVoiceInterviewMode(resumeSession.mode)
+      || resumeSession.run_id !== runId
+      || resumeSession.candidate_id !== candidate.candidate_id
+    ) {
+      return;
+    }
+    setSession(resumeSession);
+    setCandidateAnswer("");
+    setError(null);
+    setAnswerSource("text");
+    setAnswerMetadata(null);
+    setIsListening(false);
+    setIsSpeaking(false);
+    transcriptBufferRef.current = "";
+    lastSpokenQuestionRef.current = "";
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+    onResumeSessionConsumed?.();
+  }, [resumeSession?.session_id, resumeSession?.updated_at, runId, candidate.candidate_id]);
 
   useEffect(() => {
     const speechRecognitionCtor = (
@@ -841,4 +817,16 @@ function difficultyLabel(value: InterviewDifficulty) {
 
 function interviewerStyleLabel(value: InterviewerStyle) {
   return INTERVIEWER_STYLES.find((item) => item.id === value)?.label ?? "亲切的 HR";
+}
+
+function coerceDifficulty(value: string): InterviewDifficulty {
+  return DIFFICULTY_OPTIONS.some((item) => item.id === value) ? value as InterviewDifficulty : "mid";
+}
+
+function coerceInterviewerStyle(value: string): InterviewerStyle {
+  return INTERVIEWER_STYLES.some((item) => item.id === value) ? value as InterviewerStyle : "friendly_hr";
+}
+
+function isVoiceInterviewMode(value: string) {
+  return value.startsWith("voice");
 }

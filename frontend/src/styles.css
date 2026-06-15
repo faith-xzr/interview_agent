@@ -363,6 +363,12 @@ a {
   background: #f5f7ff;
 }
 
+.pending-job-group > button {
+  cursor: default;
+  color: #55647a;
+  background: #f8fbff;
+}
+
 .job-group strong,
 .job-group small {
   display: block;
@@ -393,6 +399,12 @@ a {
 
 .job-candidate-table .job-candidate-row:first-child {
   border-top: 0;
+}
+
+.job-candidate-table .pending-candidate-row {
+  grid-template-columns: 46px minmax(0, 1fr) 130px 120px;
+  cursor: default;
+  background: #fbfdff;
 }
 
 .job-candidate-row:hover {
@@ -467,11 +479,26 @@ a {
   font-weight: 700;
 }
 
+.status-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #d18412;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .score-cell {
   color: #1b2434;
   font-size: 18px;
   font-weight: 800;
   text-align: right;
+}
+
+.pending-score {
+  color: #8b9ab2;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .compact-empty {
@@ -889,10 +916,33 @@ a {
 
 .record-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px 42px;
+  grid-template-columns: minmax(0, 1fr) 42px;
   gap: 18px;
   align-items: start;
   padding: 18px;
+}
+
+.record-content,
+.record-content-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+}
+
+.record-content-button {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.record-content-button:focus-visible {
+  outline: 2px solid #4d53e6;
+  outline-offset: 4px;
 }
 
 .record-main {
@@ -929,6 +979,19 @@ a {
 .record-score strong {
   color: #263248;
   font-size: 14px;
+}
+
+.record-resume-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #1f7a4d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.record-report {
+  grid-column: 1 / -1;
 }
 
 .icon-button {
@@ -1235,7 +1298,7 @@ a:focus-visible {
 }
 
 .file-picker-summary {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-self: start;
   max-width: 100%;
@@ -1251,10 +1314,85 @@ a:focus-visible {
   min-width: 0;
 }
 
-.file-picker-summary span {
+.file-picker-summary-selected {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.file-picker-empty,
+.file-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(100%, 300px);
+  min-width: 0;
+  padding: 4px 9px 4px 4px;
+  border: 1px solid #e1e7f1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2a3d;
+  box-shadow: 0 5px 14px rgba(28, 38, 64, 0.06);
+}
+
+.file-chip-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 7px;
+}
+
+.file-chip-kind {
+  flex: 0 0 auto;
+  color: #42506a;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.file-chip-name {
+  min-width: 0;
+  color: #657287;
+  font-size: 12px;
+}
+
+.file-chip-pdf .file-chip-logo {
+  color: #d93434;
+  background: #fff0f0;
+}
+
+.file-chip-docx .file-chip-logo {
+  color: #2f61d5;
+  background: #eef4ff;
+}
+
+.file-chip-txt .file-chip-logo {
+  color: #1c8a5a;
+  background: #ecfdf4;
+}
+
+.file-chip-other .file-chip-logo {
+  color: #6b7280;
+  background: #f3f4f6;
 }
 
 /* ---------- Form footer / button ---------- */
@@ -1306,6 +1444,61 @@ a:focus-visible {
   background: #fbeaec;
   line-height: 1.5;
   font-size: 14px;
+}
+
+.llm-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid #f0c66b;
+  border-radius: var(--radius-md);
+  background: #fff8e7;
+  color: #6f4a00;
+}
+
+.llm-alert-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.llm-alert-main strong {
+  color: #4f3500;
+  font-size: 15px;
+}
+
+.llm-alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.llm-alert-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid #f3d895;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.llm-alert-item b {
+  flex: 0 0 auto;
+  color: #4f3500;
+  font-size: 12px;
+}
+
+.llm-alert-item small {
+  min-width: 0;
+  color: #8a6a24;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- Results ---------- */
@@ -1860,7 +2053,7 @@ li {
 
 .extraction-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -2342,6 +2535,90 @@ li {
   line-height: 1.55;
 }
 
+.interview-category-scores,
+.interview-question-evaluations {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.interview-category-scores h5,
+.interview-question-evaluations h5 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.category-score-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.category-score-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #dfe5f0;
+  border-radius: 999px;
+  background: #f8faff;
+  color: #2f3b52;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.question-evaluation-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dfe5f0;
+  border-radius: var(--radius-sm);
+  background: #fbfcff;
+}
+
+.question-evaluation-head {
+  display: grid;
+  gap: 4px;
+}
+
+.question-evaluation-head span,
+.reference-answer span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.question-evaluation-head strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.question-evaluation-item p,
+.reference-answer p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.reference-answer {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed #dfe5f0;
+}
+
+.reference-answer ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 /* ---------- Loader ---------- */
 
 .spin {
@@ -2430,6 +2707,11 @@ li {
   .record-score,
   .score-cell {
     text-align: left;
+  }
+
+  .record-content,
+  .record-content-button {
+    grid-template-columns: 1fr;
   }
 
   .requirement-row {

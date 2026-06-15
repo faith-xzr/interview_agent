@@ -4,6 +4,7 @@ from typing import Any, Iterable, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import (
     CandidateProfile,
     DimensionExplanation,
@@ -33,6 +34,7 @@ def _record_failure(
     failure_code: str,
     message: str,
     invalid_requirements: Optional[List[str]] = None,
+    details: Optional[dict[str, Any]] = None,
 ) -> None:
     if failure_sink is None:
         return
@@ -42,6 +44,7 @@ def _record_failure(
             "failure_code": failure_code,
             "message": message,
             "invalid_requirements": invalid_requirements or [],
+            "details": details or {},
         }
     )
 
@@ -68,27 +71,74 @@ def generate_scoring_rubric(
     llm: Any,
     jd: JDProfile,
     jd_facts: Iterable[ExtractedFact],
+    failure_sink: Optional[List[dict[str, Any]]] = None,
 ) -> Optional[ScoringRubric]:
     if not getattr(llm, "available", False):
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code="llm_unavailable",
+            message="LLM is not configured for rubric generation.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
 
     facts = list(jd_facts)
     if not facts:
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code="jd_facts_unavailable",
+            message="No JD facts were available for LLM rubric generation.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
 
     try:
-        payload = llm.complete_json(SYSTEM_PROMPT, _build_rubric_prompt(jd, facts))
-    except Exception:
+        payload = llm.complete_json(
+            SYSTEM_PROMPT,
+            _build_rubric_prompt(jd, facts),
+            timeout=LLM_JSON_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code=f"{type(exc).__name__}: {exc}",
+            message="LLM rubric generation request raised an exception.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
     if not isinstance(payload, dict):
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code=_llm_failure_reason(llm, payload),
+            message="LLM rubric generation payload is not a JSON object.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
 
     raw_items = payload.get("rubric")
     if not isinstance(raw_items, list):
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code="rubric_missing_items",
+            message="LLM rubric generation payload does not contain a rubric list.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
 
     items = _parse_rubric_items(raw_items)
     if not items:
+        _record_failure(
+            failure_sink,
+            stage="rubric_generation",
+            failure_code="rubric_items_invalid",
+            message="LLM rubric generation returned no usable rubric items.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+        )
         return None
     return ScoringRubric(items=_normalize_scores(items))
 
@@ -102,14 +152,16 @@ def score_candidate_with_llm(
     extraction_facts: Iterable[ExtractedFact],
     failure_sink: Optional[List[dict[str, Any]]] = None,
 ) -> Optional[MatchReport]:
-    rubric = generate_scoring_rubric(llm, jd, jd_facts)
+    rubric = generate_scoring_rubric(llm, jd, jd_facts, failure_sink=failure_sink)
     if rubric is None or not rubric.items:
-        _record_failure(
-            failure_sink,
-            stage="rubric_generation",
-            failure_code="rubric_unavailable",
-            message="LLM rubric generation returned no usable rubric items.",
-        )
+        if not failure_sink:
+            _record_failure(
+                failure_sink,
+                stage="rubric_generation",
+                failure_code="rubric_unavailable",
+                message="LLM rubric generation returned no usable rubric items.",
+                details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
+            )
         return None
 
     evidence_items = _build_evidence_references(extraction_facts, evidence_texts)
@@ -117,6 +169,7 @@ def score_candidate_with_llm(
         payload = llm.complete_json(
             MATCHING_SYSTEM_PROMPT,
             _build_matching_prompt(jd, candidate, rubric, evidence_items),
+            timeout=LLM_JSON_TIMEOUT_SECONDS,
         )
     except Exception:
         _record_failure(
@@ -124,14 +177,16 @@ def score_candidate_with_llm(
             stage="requirement_matching",
             failure_code="matching_request_failed",
             message="LLM requirement matching request raised an exception.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
         )
         return None
     if not isinstance(payload, dict):
         _record_failure(
             failure_sink,
             stage="requirement_matching",
-            failure_code="matching_payload_not_object",
+            failure_code=_llm_failure_reason(llm, payload),
             message="LLM requirement matching payload is not a JSON object.",
+            details={"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
         )
         return None
 
@@ -155,6 +210,15 @@ def score_candidate_with_llm(
         requirement_matches=matches,
         dimension_explanations=dimension_explanations,
     )
+
+
+def _llm_failure_reason(llm: Any, payload: Any) -> str:
+    last_error = getattr(llm, "last_error", None)
+    if last_error:
+        return str(last_error)
+    if payload is None:
+        return "llm_returned_none"
+    return "invalid_llm_response"
 
 
 def _build_rubric_prompt(jd: JDProfile, facts: List[ExtractedFact]) -> str:

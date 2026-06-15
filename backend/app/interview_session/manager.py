@@ -4,6 +4,7 @@ from typing import Any, Iterable, List, Optional
 from uuid import uuid4
 
 from app.interview_followup import generate_interview_answer_followup_for_question
+from app.interview_session.evaluation import build_llm_final_report
 from app.schemas import (
     AgentSkill,
     AgentSkillCategory,
@@ -110,8 +111,27 @@ def submit_interview_turn(
     return session
 
 
-def finalize_interview_session(session: InterviewSession) -> InterviewSession:
-    session.final_report = _build_final_report(session.turns)
+def finalize_interview_session(
+    session: InterviewSession,
+    llm: Any = None,
+    run: Optional[RunReport] = None,
+    candidate: Optional[CandidateReport] = None,
+    skill_repository: Optional[SkillRepository] = None,
+) -> InterviewSession:
+    llm_report = None
+    if llm is not None:
+        skill = _resolve_session_skill(session, run, skill_repository) if run is not None else None
+        try:
+            llm_report = build_llm_final_report(
+                llm,
+                session.turns,
+                run=run,
+                candidate=candidate,
+                skill=skill,
+            )
+        except Exception:
+            llm_report = None
+    session.final_report = llm_report or _build_final_report(session.turns)
     session.status = "completed"
     session.current_question = None
     session.updated_at = datetime.utcnow()

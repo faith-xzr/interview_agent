@@ -346,7 +346,26 @@ const completedInterviewSession = {
     strengths: ["已形成初步面试记录，可作为后续追问依据。"],
     risks: ["缺少个人职责", "缺少量化结果"],
     summary: "本次面试完成 1 轮问答。候选人平均表达清晰度 42 分，回答深度 36 分，证据一致性为 weak。",
-    next_steps: ["继续要求候选人给出指标口径、基线、提升幅度和验证方式。"]
+    next_steps: ["继续要求候选人给出指标口径、基线、提升幅度和验证方式。"],
+    category_scores: [{ category: "RAG 评估", score: 53, question_count: 1 }],
+    question_evaluations: [
+      {
+        question_index: 0,
+        question: "你如何评估 RAG 召回质量？",
+        category: "RAG 评估",
+        user_answer: "我做过 RAG 系统，主要用了 FastAPI，效果还可以。",
+        score: 53,
+        feedback: "能说明项目职责，但缺少指标口径和验证方式。"
+      }
+    ],
+    reference_answers: [
+      {
+        question_index: 0,
+        question: "你如何评估 RAG 召回质量？",
+        reference_answer: "应说明检索链路、召回率、延迟、基线对照和失败兜底。",
+        key_points: ["检索链路", "量化指标", "失败兜底"]
+      }
+    ]
   }
 };
 
@@ -541,6 +560,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: /简历管理/ })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /分析结果/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /模拟面试/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /面试记录/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /设置/ })).toBeInTheDocument();
@@ -549,6 +569,7 @@ describe("App", () => {
     expect(screen.queryByText("知识库")).not.toBeInTheDocument();
     expect(screen.queryByText("面试日程")).not.toBeInTheDocument();
     expect(screen.getByText("按 JD 分组给简历打分")).toBeInTheDocument();
+    expect(screen.getByText("AI简历解析与评分")).toBeInTheDocument();
     expect(screen.queryByText("按 JD 分组分析")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "简历管理" })).toBeInTheDocument();
     expect(screen.queryByText("按岗位 JD 分组管理简历与分析结果")).not.toBeInTheDocument();
@@ -561,6 +582,174 @@ describe("App", () => {
     expect(screen.queryByText("结构化解析 · 智能匹配 · 自动出题")).not.toBeInTheDocument();
     expect(screen.queryByText("每个 JD 会形成一个独立岗位分组")).not.toBeInTheDocument();
     expect(screen.queryByText("上传后归入当前 JD 岗位分组")).not.toBeInTheDocument();
+  });
+
+  test("shows analysis results as a separate workspace with an empty waiting state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
+
+    expect(screen.getByRole("heading", { name: "分析结果" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "等待大模型评分结果" })).toBeInTheDocument();
+    expect(screen.getByText("请先在简历管理上传 JD 和简历，并开始智能筛选。")).toBeInTheDocument();
+    expect(screen.queryByText("候选人总览")).not.toBeInTheDocument();
+  });
+
+  test("shows a pending resume group immediately while analysis is running", async () => {
+    let resolveRun: ((response: Response) => void) | null = null;
+    const pendingRun = new Promise<Response>((resolve) => {
+      resolveRun = resolve;
+    });
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/runs") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/runs") && method === "POST") {
+        return pendingRun;
+      }
+      if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ detail: "unexpected request" }), { status: 500 });
+    }) as typeof fetch;
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "AI Agent / RAG 应用工程师实习生");
+    await user.type(screen.getByLabelText("简历文本兜底"), "许哲瑞，AI Agent 项目经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+
+    await waitFor(() => expect(screen.getAllByText("等待大模型评分结果").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("分析中").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("评分未完成").length).toBeGreaterThan(0);
+
+    await act(async () => {
+      resolveRun?.(
+        new Response(JSON.stringify(demoReport), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+      await pendingRun;
+    });
+
+    await waitFor(() => expect(screen.getAllByText("分析完成").length).toBeGreaterThan(0));
+    expect(screen.queryAllByText("评分未完成")).toHaveLength(0);
+  });
+
+  test("shows selected upload files as typed file chips", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText("选择 JD 文件")).toBeInTheDocument());
+
+    await user.upload(
+      screen.getByLabelText("选择 JD 文件"),
+      new File(["岗位描述"], "ai_agent_rag_demo.pdf", { type: "application/pdf" })
+    );
+    await user.upload(
+      screen.getByLabelText("选择简历文件"),
+      [
+        new File(["简历"], "candidate_resume.docx", {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }),
+        new File(["备注"], "notes.txt", { type: "text/plain" })
+      ]
+    );
+
+    expect(screen.getByLabelText("已选择 PDF 文件 ai_agent_rag_demo.pdf")).toBeInTheDocument();
+    expect(screen.getByLabelText("已选择 DOCX 文件 candidate_resume.docx")).toBeInTheDocument();
+    expect(screen.getByLabelText("已选择 TXT 文件 notes.txt")).toBeInTheDocument();
+    expect(screen.getByText("ai_agent_rag_demo.pdf")).toBeInTheDocument();
+    expect(screen.getByText("candidate_resume.docx")).toBeInTheDocument();
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+  });
+
+  test("shows a visible warning when an analysis used LLM fallback", async () => {
+    const fallbackReport = JSON.parse(JSON.stringify(demoReport));
+    fallbackReport.warnings = [
+      "JD 的 LLM 抽取失败，已回退本地规则结果。",
+      "resume-1.txt 的 LLM 简历抽取失败，已使用本地规则结果。"
+    ];
+    fallbackReport.audit_events = [
+      {
+        event: "extraction.jd_llm_fallback",
+        stage: "jd_extraction",
+        failure_code: "ReadTimeout: request timed out",
+        message: "JD LLM extraction failed; local rule extraction was used.",
+        fallback_strategy: "local_rule_extraction",
+        model: "qwen3.5-flash",
+        prompt_version: "jd_requirements@2026-06-13",
+        invalid_requirements: [],
+        details: { llm_timeout_seconds: 90 }
+      },
+      {
+        event: "scoring.rubric_invalid",
+        stage: "rubric_generation",
+        failure_code: "rubric_unavailable",
+        message: "LLM rubric generation returned no usable rubric items.",
+        fallback_strategy: "local_rule_scorer",
+        model: "qwen3.5-flash",
+        prompt_version: "rubric_generation@2026-06-14",
+        invalid_requirements: [],
+        details: { llm_timeout_seconds: 90 }
+      }
+    ];
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/runs") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/runs") && method === "POST") {
+        return new Response(JSON.stringify(fallbackReport), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ detail: "unexpected request" }), { status: 500 });
+    }) as typeof fetch;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
+    await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
+
+    const alert = await screen.findByRole("alert", { name: "LLM 服务调用失败" });
+    expect(within(alert).getByText("LLM 服务调用失败")).toBeInTheDocument();
+    expect(within(alert).queryByText("LLM 服务调用失败，已启用本地兜底")).not.toBeInTheDocument();
+    expect(within(alert).queryByText("本次分析已继续完成，但以下步骤不是模型直接生成结果。")).not.toBeInTheDocument();
+    expect(within(alert).getByText("JD 结构化抽取")).toBeInTheDocument();
+    expect(within(alert).getByText("智能匹配打分")).toBeInTheDocument();
+    expect(within(alert).getAllByText("按照预定义规则执行").length).toBeGreaterThan(0);
+    expect(within(alert).queryByText(/qwen3.5-flash/)).not.toBeInTheDocument();
+    expect(within(alert).queryByText(/rubric_unavailable/)).not.toBeInTheDocument();
+    expect(within(alert).queryByText(/ReadTimeout/)).not.toBeInTheDocument();
   });
 
   test("loads persisted resume groups and interview records from the backend", async () => {
@@ -603,12 +792,63 @@ describe("App", () => {
       "/api/runs/run-1/candidates/candidate-1/source-file"
     );
 
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
     expect(document.querySelector(".ranking-list .candidate-main small")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史" }));
+    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史记录" }));
     expect(screen.getAllByText("总分 53").length).toBeGreaterThan(0);
     expect(screen.getAllByText("谨慎推进，补充验证关键缺口").length).toBeGreaterThan(0);
+  });
+
+  test("removes an interview record locally when delete reports it is already gone", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/runs") && method === "GET") {
+        return new Response(JSON.stringify([demoReport]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([completedInterviewSession]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/interviews/interview-1") && method === "DELETE") {
+        return new Response(JSON.stringify({ detail: "未找到该面试会话。" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/resumes") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/settings/model-providers") && method === "GET") {
+        return new Response(JSON.stringify(defaultModelProviders), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ detail: "unexpected request" }), { status: 500 });
+    });
+    global.fetch = fetchMock as typeof fetch;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史记录" }));
+    await waitFor(() => expect(screen.getAllByText("谨慎推进，补充验证关键缺口").length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: "删除面试记录" }));
+
+    await waitFor(() => expect(screen.queryAllByText("谨慎推进，补充验证关键缺口")).toHaveLength(0));
+    expect(screen.getByText("暂无面试记录")).toBeInTheDocument();
+    expect(screen.queryByText("未找到该面试会话。")).not.toBeInTheDocument();
   });
 
   test("switches the default model provider through the backend settings API", async () => {
@@ -822,12 +1062,13 @@ describe("App", () => {
     expect(screen.queryByText("核心技能与工具待确认：Python（简历未明确覆盖该要求）")).not.toBeInTheDocument();
     expect(screen.queryByText("简历中存在少量可复用经历，但与岗位核心要求关联有限")).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     expect(screen.queryByRole("link", { name: "导出 JSON" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "总览" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "结构化提取" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "智能匹配打分" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "试题生成" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "模拟面试 配置面试练习" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "模拟面试 配置面试流程" })).toBeInTheDocument();
 
     expect(screen.getByText("候选人总览")).toBeInTheDocument();
     expect(screen.queryByText("评分拆解")).not.toBeInTheDocument();
@@ -838,16 +1079,14 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
     expect(screen.getByText("抽取过程")).toBeInTheDocument();
     expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
-    expect(screen.getByText("简历中的重点")).toBeInTheDocument();
+    expect(screen.queryByText("简历中的重点")).not.toBeInTheDocument();
     expect(screen.getAllByText("必备技能").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "学历背景" })).toBeInTheDocument();
-    expect(screen.getByText("某理工大学计算机科学与技术本科。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "实习/工作经验" })).toBeInTheDocument();
-    expect(screen.getByText("头部互联网平台后端开发实习生：负责 RAG 检索平台后端接口、SQL 查询和跨端联调。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "项目经验" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "专业技能" })).toBeInTheDocument();
-    expect(screen.getByText("FastAPI")).toHaveClass("skill-chip");
-    expect(screen.getByText("SQL")).toHaveClass("skill-chip");
+    expect(screen.queryByRole("heading", { name: "学历背景" })).not.toBeInTheDocument();
+    expect(screen.queryByText("某理工大学计算机科学与技术本科。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "实习/工作经验" })).not.toBeInTheDocument();
+    expect(screen.queryByText("头部互联网平台后端开发实习生：负责 RAG 检索平台后端接口、SQL 查询和跨端联调。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "项目经验" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "专业技能" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "基本信息" })).not.toBeInTheDocument();
     expect(screen.queryByText("target_role")).not.toBeInTheDocument();
     expect(screen.queryByText("required_skill")).not.toBeInTheDocument();
@@ -871,7 +1110,7 @@ describe("App", () => {
     expect(screen.getAllByText("评分标准").length).toBeGreaterThan(0);
     expect(screen.queryByText("中级")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试流程" }));
     expect(screen.queryByText("根据 JD 自动匹配面试 skill，配置难度和面试官风格")).not.toBeInTheDocument();
     expect(screen.getByText("面试官风格")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /亲切的 HR/ })).toBeInTheDocument();
@@ -899,18 +1138,19 @@ describe("App", () => {
     await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
     await user.type(screen.getByLabelText("简历文本兜底"), "王五，客服经验。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     await screen.findByText("候选人总览");
 
     await user.click(screen.getByRole("button", { name: "试题生成" }));
     expect(screen.getByText("当前候选人未生成面试题，已跳过面试题展示。")).toBeInTheDocument();
     expect(screen.queryByText("面试问题 1")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试流程" }));
     expect(screen.getByText("当前候选人未生成面试题，建议先完成岗位匹配审核后再开始 AI 面试。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "开始 AI 面试" })).not.toBeInTheDocument();
   });
 
-  test("keeps resume extraction highlights coherent and hides low-value facts", async () => {
+  test("hides resume extraction highlights from the extraction view", async () => {
     const fragmentedReport = JSON.parse(JSON.stringify(demoReport));
     fragmentedReport.candidates[0].match_report.match_reasons = [
       "AI工具应用能力：熟练运用 ChatGPT、Midjourney 与 Runway。",
@@ -1212,38 +1452,39 @@ describe("App", () => {
     await user.type(screen.getByLabelText("JD 文本兜底"), "AIGC 内容运营");
     await user.type(screen.getByLabelText("简历文本兜底"), "小李，AIGC 校园营销经验。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     await screen.findByText("候选人总览");
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
 
-    expect(screen.getByText("简历中的重点")).toBeInTheDocument();
+    expect(screen.queryByText("简历中的重点")).not.toBeInTheDocument();
     expect(screen.queryByText("简历抽取事实")).not.toBeInTheDocument();
     expect(screen.queryByText(/AI工具应用能力/)).not.toBeInTheDocument();
     expect(screen.queryByText("领域证据")).not.toBeInTheDocument();
     expect(screen.queryByText("AI")).not.toBeInTheDocument();
-    expect(screen.getByText("负责「定制&找工厂」账号矩阵操盘，独立闭环完成从选题、脚本到分发的全流程，累计产出爆款短视频15条")).toBeInTheDocument();
+    expect(screen.queryByText("负责「定制&找工厂」账号矩阵操盘，独立闭环完成从选题、脚本到分发的全流程，累计产出爆款短视频15条")).not.toBeInTheDocument();
     expect(screen.queryByText("爆款短视频15条")).not.toBeInTheDocument();
-    expect(screen.getByText("运用 AIGC 工作流（Midjourney + Runway）辅助视觉生产，将单条视频制作周期从3天缩短至4小时")).toBeInTheDocument();
+    expect(screen.queryByText("运用 AIGC 工作流（Midjourney + Runway）辅助视觉生产，将单条视频制作周期从3天缩短至4小时")).not.toBeInTheDocument();
     expect(screen.queryByText("至4小时")).not.toBeInTheDocument();
-    expect(screen.getByText("在深信服实习中，VLM 视觉任务准确率最高提升41.3%")).toBeInTheDocument();
+    expect(screen.queryByText("在深信服实习中，VLM 视觉任务准确率最高提升41.3%")).not.toBeInTheDocument();
     expect(screen.queryByText("40+")).not.toBeInTheDocument();
     expect(screen.queryByText("13.45%")).not.toBeInTheDocument();
-    expect(screen.getByText("XX 品牌 AIGC 营销实战（校园创业）：带领5人团队为校园咖啡店策划 AIGC 营销活动，利用 Midjourney 生成系列海报，节省设计成本2000元")).toBeInTheDocument();
+    expect(screen.queryByText("XX 品牌 AIGC 营销实战（校园创业）：带领5人团队为校园咖啡店策划 AIGC 营销活动，利用 Midjourney 生成系列海报，节省设计成本2000元")).not.toBeInTheDocument();
     expect(screen.queryByText(/节省设计5人成本/)).not.toBeInTheDocument();
     expect(screen.queryByText("成本2000元")).not.toBeInTheDocument();
-    expect(screen.getByText("AIGC 工作流（ChatGPT/Midjourney/Runway）")).toHaveClass("skill-chip");
+    expect(screen.queryByText("AIGC 工作流（ChatGPT/Midjourney/Runway）")).not.toBeInTheDocument();
     expect(screen.queryByText("（ChatGPT/Midjourney/Runway）")).not.toBeInTheDocument();
     expect(screen.queryByText("熟悉")).not.toBeInTheDocument();
-    expect(screen.getByText("跨境平台：TikTok Shop / Amazon / Shopify 独立站运营逻辑与后台操作")).toHaveClass("skill-chip");
-    expect(screen.getByText("AI 营销：Midjourney V6 / Runway Gen-3 / HeyGen 等 AIGC 工具进行视频/图片规模化生产")).toHaveClass("skill-chip");
-    expect(screen.getByText("数据分析：Python（Pandas）")).toHaveClass("skill-chip");
+    expect(screen.queryByText("跨境平台：TikTok Shop / Amazon / Shopify 独立站运营逻辑与后台操作")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI 营销：Midjourney V6 / Runway Gen-3 / HeyGen 等 AIGC 工具进行视频/图片规模化生产")).not.toBeInTheDocument();
+    expect(screen.queryByText("数据分析：Python（Pandas）")).not.toBeInTheDocument();
     expect(screen.queryByText("Amazon")).not.toBeInTheDocument();
     expect(screen.queryByText("频/图片规模化生产 [4]。")).not.toBeInTheDocument();
-    expect(screen.getByText("具备极强的 AI 赋能意识，善于利用新技术解决业务痛点")).toBeInTheDocument();
-    expect(screen.getByText("拥有出色的逻辑思维与快速学习能力")).toBeInTheDocument();
+    expect(screen.queryByText("具备极强的 AI 赋能意识，善于利用新技术解决业务痛点")).not.toBeInTheDocument();
+    expect(screen.queryByText("拥有出色的逻辑思维与快速学习能力")).not.toBeInTheDocument();
     expect(screen.queryByText("思维与快速学习能力")).not.toBeInTheDocument();
   });
 
-  test("supplements isolated project highlights with a profile project summary", async () => {
+  test("does not surface isolated project highlights in the extraction view", async () => {
     const reportWithIsolatedProjectHighlight = JSON.parse(JSON.stringify(demoReport));
     reportWithIsolatedProjectHighlight.candidates[0].profile.projects = [
       "工业设备智能问答与辅助诊断平台：面向工业设备巡检、报警解释、故障排查和检维修知识问答，将自然语言问题转化为可追溯的工业运维辅助诊断流程。"
@@ -1285,14 +1526,17 @@ describe("App", () => {
     await user.type(screen.getByLabelText("JD 文本兜底"), "工业智能运维");
     await user.type(screen.getByLabelText("简历文本兜底"), "工业设备智能问答与辅助诊断平台。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     await screen.findByText("候选人总览");
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
 
-    expect(screen.getByText("工业设备智能问答与辅助诊断平台：面向工业设备巡检、报警解释、故障排查和检维修知识问答，将自然语言问题转化为可追溯的工业运维辅助诊断流程。")).toBeInTheDocument();
-    expect(screen.getByText("已授权专利一项（大模型辅助的多模态工业设备知识图谱构建方法）")).toBeInTheDocument();
+    expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
+    expect(screen.queryByText("简历中的重点")).not.toBeInTheDocument();
+    expect(screen.queryByText("工业设备智能问答与辅助诊断平台：面向工业设备巡检、报警解释、故障排查和检维修知识问答，将自然语言问题转化为可追溯的工业运维辅助诊断流程。")).not.toBeInTheDocument();
+    expect(screen.queryByText("已授权专利一项（大模型辅助的多模态工业设备知识图谱构建方法）")).not.toBeInTheDocument();
   });
 
-  test("compacts fragmented work experience facts and hides citation leftovers", async () => {
+  test("hides fragmented work experience facts and citation leftovers", async () => {
     const fragmentedReport = JSON.parse(JSON.stringify(demoReport));
     fragmentedReport.candidates[0].extraction_facts = [
       {
@@ -1390,12 +1634,15 @@ describe("App", () => {
     await user.type(screen.getByLabelText("JD 文本兜底"), "海外内容运营");
     await user.type(screen.getByLabelText("简历文本兜底"), "小李，TikTok Shop 运营经验。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+    await user.click(screen.getByRole("button", { name: "分析结果 AI简历解析与评分" }));
     await screen.findByText("候选人总览");
     await user.click(screen.getByRole("button", { name: "结构化提取" }));
 
-    expect(screen.getByText("TikTok Shop 矩阵操盘：负责北美区 TikTok Shop账号从 0到1的搭建，通过AI批量生成营销素材，累计曝光150万")).toBeInTheDocument();
-    expect(screen.getByText("AI 赋能选品与营销：引入 NLP 与情感分析工具抓取社媒热点，结合 Midjourney 快速迭3个")).toBeInTheDocument();
-    expect(screen.getByText("自动化客服体系：基于 LLM 搭建多语言智能客服 Agent，处理80%的售前咨询与售后FAQ")).toBeInTheDocument();
+    expect(screen.getByText("JD 核心要求")).toBeInTheDocument();
+    expect(screen.queryByText("简历中的重点")).not.toBeInTheDocument();
+    expect(screen.queryByText("TikTok Shop 矩阵操盘：负责北美区 TikTok Shop账号从 0到1的搭建，通过AI批量生成营销素材，累计曝光150万")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI 赋能选品与营销：引入 NLP 与情感分析工具抓取社媒热点，结合 Midjourney 快速迭3个")).not.toBeInTheDocument();
+    expect(screen.queryByText("自动化客服体系：基于 LLM 搭建多语言智能客服 Agent，处理80%的售前咨询与售后FAQ")).not.toBeInTheDocument();
     expect(screen.queryByText("[4]")).not.toBeInTheDocument();
     expect(screen.queryByText("后FAQ")).not.toBeInTheDocument();
   });
@@ -1410,12 +1657,11 @@ describe("App", () => {
     await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
 
-    await screen.findByText("候选人总览");
-    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    await waitFor(() => expect(screen.getAllByText("王五").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试流程" }));
     expect(screen.getByText("面试模式")).toBeInTheDocument();
-    expect(screen.getByText("JD 自动路由调试")).toBeInTheDocument();
-    expect((await screen.findAllByText("高级 Python 后端工程师 / Python 后端开发")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Skill")).toBeInTheDocument();
+    expect(screen.queryByText("JD 自动路由调试")).not.toBeInTheDocument();
+    expect(screen.queryByText("Skill")).not.toBeInTheDocument();
     expect(screen.queryByText("面试方向")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Java 后端开发" })).not.toBeInTheDocument();
     expect(screen.getByText("难度")).toBeInTheDocument();
@@ -1440,9 +1686,45 @@ describe("App", () => {
     expect(await screen.findByText("最终评估报告")).toBeInTheDocument();
     expect(screen.getByText("谨慎推进，补充验证关键缺口")).toBeInTheDocument();
     expect(screen.getByText("总分 53")).toBeInTheDocument();
+    expect(screen.getByText("逐题评估")).toBeInTheDocument();
+    expect(screen.getByText("能说明项目职责，但缺少指标口径和验证方式。")).toBeInTheDocument();
+    expect(screen.getByText("应说明检索链路、召回率、延迟、基线对照和失败兜底。")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史" }));
+    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史记录" }));
     expect(screen.getAllByText("谨慎推进，补充验证关键缺口").length).toBeGreaterThan(0);
+  });
+
+  test("resumes an in-progress interview from the records workspace", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
+    await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+
+    await waitFor(() => expect(screen.getAllByText("王五").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试流程" }));
+    await user.click(screen.getByRole("button", { name: "开始 AI 面试" }));
+    expect(await screen.findByText("面试问题 1")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("候选人回答"),
+      "我做过 RAG 系统，主要用了 FastAPI，效果还可以。"
+    );
+    await user.click(screen.getByRole("button", { name: "发送回答" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("你刚才提到效果还可以，能具体说明你个人负责的环节和用什么指标验证效果吗？").length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史记录" }));
+    await user.click(screen.getByRole("button", { name: /继续面试 王五 - 高级 Python 后端工程师/ }));
+
+    expect(window.location.pathname).toBe("/interview-hub");
+    expect(screen.getAllByText("你刚才提到效果还可以，能具体说明你个人负责的环节和用什么指标验证效果吗？").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("候选人回答")).toBeInTheDocument();
+    expect(screen.getByText("清晰度 42")).toBeInTheDocument();
   });
 
   test("starts a cloud voice interview through backend WebSocket", async () => {
@@ -1522,8 +1804,8 @@ describe("App", () => {
     await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
     await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
 
-    await screen.findByText("候选人总览");
-    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    await waitFor(() => expect(screen.getAllByText("王五").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试流程" }));
     await user.click(screen.getByRole("button", { name: /语音面试/ }));
     await user.click(screen.getByRole("button", { name: "开始语音面试" }));
 

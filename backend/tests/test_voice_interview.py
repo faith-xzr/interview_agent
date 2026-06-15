@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.config import Settings
 from app.main import create_app
@@ -118,6 +119,78 @@ def test_voice_websocket_can_submit_final_transcript_as_interview_turn(tmp_path)
         assert updated_session["turns"][0]["answer_source"] == "speech"
         assert updated_session["turns"][0]["answer_metadata"]["source"] == "speech"
         assert updated_session["turns"][0]["answer_metadata"]["finalized"] is True
+
+
+def test_voice_websocket_submit_text_streams_next_question_tts(tmp_path, monkeypatch):
+    spoken_texts = []
+
+    class FakeAsrStream:
+        def __init__(self, api_key, settings, on_subtitle, on_error):
+            self.api_key = api_key
+            self.settings = settings
+            self.on_subtitle = on_subtitle
+            self.on_error = on_error
+
+        async def connect(self):
+            return None
+
+        async def close(self):
+            return None
+
+    class FakeTtsClient:
+        def __init__(self, api_key, settings):
+            self.api_key = api_key
+            self.settings = settings
+
+        async def synthesize(self, text):
+            spoken_texts.append(text)
+            yield f"audio-{len(spoken_texts)}"
+
+    monkeypatch.setattr("app.main.DashScopeAsrStream", FakeAsrStream)
+    monkeypatch.setattr("app.main.DashScopeTtsClient", FakeTtsClient)
+    client, _settings = make_client(tmp_path)
+    client.put("/api/settings/model-providers/dashscope/api-key", json={"api_key": "sk-test"})
+    interview_session = create_interview_session(client)
+    voice_session = client.post(
+        "/api/voice-interviews",
+        json={"interview_session_id": interview_session["session_id"]},
+    ).json()
+
+    with client.websocket_connect(voice_session["websocket_url"]) as websocket:
+        assert websocket.receive_json()["action"] == "ready"
+        assert websocket.receive_json()["data"] == "audio-1"
+        assert websocket.receive_json()["isLast"] is True
+
+        websocket.send_json({
+            "type": "control",
+            "action": "submit_text",
+            "text": "我负责过 RAG 检索和工具调用。",
+        })
+
+        assert websocket.receive_json() == {
+            "type": "subtitle",
+            "text": "我负责过 RAG 检索和工具调用。",
+            "isFinal": True,
+        }
+        session_message = websocket.receive_json()
+        assert session_message["type"] == "interview_session"
+
+        websocket.send_json({"type": "control", "action": "stop"})
+        trailing_messages = []
+        try:
+            while True:
+                trailing_messages.append(websocket.receive_json())
+        except WebSocketDisconnect:
+            pass
+
+    next_question = session_message["session"]["current_question"]["question"]
+    assert any(
+        message.get("type") == "audio_chunk"
+        and message.get("data") == "audio-2"
+        and message.get("isLast") is False
+        for message in trailing_messages
+    )
+    assert spoken_texts == [interview_session["current_question"]["question"], next_question]
 
 
 def test_voice_websocket_streams_audio_through_asr_and_tts(tmp_path, monkeypatch):

@@ -411,6 +411,38 @@ class InterviewTurn(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class InterviewCategoryScore(BaseModel):
+    category: str
+    score: int = 0
+    question_count: int = 0
+
+    @field_validator("score")
+    @classmethod
+    def clamp_score(cls, value: int) -> int:
+        return max(0, min(100, int(value)))
+
+
+class InterviewQuestionEvaluation(BaseModel):
+    question_index: int
+    question: str
+    category: str = "综合"
+    user_answer: str = ""
+    score: int = 0
+    feedback: str = ""
+
+    @field_validator("score")
+    @classmethod
+    def clamp_score(cls, value: int) -> int:
+        return max(0, min(100, int(value)))
+
+
+class InterviewReferenceAnswer(BaseModel):
+    question_index: int
+    question: str
+    reference_answer: str = ""
+    key_points: List[str] = Field(default_factory=list)
+
+
 class InterviewFinalReport(BaseModel):
     overall_score: int = 0
     clarity_score: int = 0
@@ -421,6 +453,9 @@ class InterviewFinalReport(BaseModel):
     risks: List[str] = Field(default_factory=list)
     summary: str = ""
     next_steps: List[str] = Field(default_factory=list)
+    category_scores: List[InterviewCategoryScore] = Field(default_factory=list)
+    question_evaluations: List[InterviewQuestionEvaluation] = Field(default_factory=list)
+    reference_answers: List[InterviewReferenceAnswer] = Field(default_factory=list)
 
     @field_validator("overall_score", "clarity_score", "depth_score")
     @classmethod

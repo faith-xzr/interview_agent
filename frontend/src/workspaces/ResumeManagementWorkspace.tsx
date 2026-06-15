@@ -1,11 +1,15 @@
 import {
   AlertCircle,
   ArrowUpRight,
+  BarChart3,
   Briefcase,
   CheckCircle2,
   ChevronRight,
+  FileArchive,
+  FileQuestion,
   FileStack,
   FileText,
+  FileType2,
   Loader2,
   Paperclip,
   Search,
@@ -16,22 +20,19 @@ import { ChangeEvent, FormEvent, type ReactNode } from "react";
 import { List } from "../components/List";
 import { PageTitle } from "../components/PageTitle";
 import {
-  SECTION_LABELS,
   factDisplayLabel,
-  formatScore,
-  groupResumeFacts,
-  type FactGroup
+  formatScore
 } from "../factDisplay";
 import { hasQuestionMaterials } from "../matchReportDisplay";
 import type {
-  CandidateProfile,
   CandidateReport,
   DimensionExplanation,
+  AuditEvent,
   ExtractedFact,
   RequirementMatch,
   RunReport
 } from "../types";
-import type { InputMode, ResultView } from "../workspaceTypes";
+import type { InputMode, PendingAnalysisGroup, ResultView } from "../workspaceTypes";
 
 const DETAIL_VIEWS: Array<{ id: ResultView; label: string }> = [
   { id: "overview", label: "总览" },
@@ -45,20 +46,17 @@ function candidateSourceFileUrl(runId: string, candidateId: string) {
 }
 
 export function ResumeManagementWorkspace({
-  activeView,
   error,
   jdFile,
   jdInputMode,
   jdText,
   loading,
-  report,
+  pendingAnalysis,
   resumeFiles,
   resumeInputMode,
   resumeText,
   runs,
-  selectedCandidate,
   selectedRunId,
-  onActiveViewChange,
   onJdFileChange,
   onJdInputModeChange,
   onJdTextChange,
@@ -71,20 +69,17 @@ export function ResumeManagementWorkspace({
   onDeleteAllRuns,
   onSubmit
 }: {
-  activeView: ResultView;
   error: string | null;
   jdFile: File | null;
   jdInputMode: InputMode;
   jdText: string;
   loading: boolean;
-  report: RunReport | null;
+  pendingAnalysis: PendingAnalysisGroup | null;
   resumeFiles: File[];
   resumeInputMode: InputMode;
   resumeText: string;
   runs: RunReport[];
-  selectedCandidate: CandidateReport | null;
   selectedRunId: string | null;
-  onActiveViewChange: (view: ResultView) => void;
   onJdFileChange: (file: File | null) => void;
   onJdInputModeChange: (mode: InputMode) => void;
   onJdTextChange: (value: string) => void;
@@ -119,7 +114,8 @@ export function ResumeManagementWorkspace({
                   accept=".pdf,.docx,.txt"
                   onChange={(event) => onJdFileChange(event.target.files?.[0] ?? null)}
                   label="选择 JD 文件"
-                  summary={jdFile ? jdFile.name : "支持 PDF / DOCX / TXT"}
+                  files={jdFile ? [jdFile] : []}
+                  emptySummary="支持 PDF / DOCX / TXT"
                 />
               ) : (
                 <textarea
@@ -146,7 +142,8 @@ export function ResumeManagementWorkspace({
                   multiple
                   onChange={onResumeFilesChange}
                   label="选择简历文件"
-                  summary={resumeFiles.length ? `已选择 ${resumeFiles.length} 份文件` : "支持 PDF / DOCX / TXT，可批量选择"}
+                  files={resumeFiles}
+                  emptySummary="支持 PDF / DOCX / TXT，可批量选择"
                 />
               ) : (
                 <textarea
@@ -184,7 +181,7 @@ export function ResumeManagementWorkspace({
             <input aria-label="搜索简历" placeholder="搜索简历..." />
           </div>
           <div className="toolbar-actions">
-            <span>{runs.length} 个岗位分组</span>
+            <span>{runs.length + (pendingAnalysis ? 1 : 0)} 个岗位分组</span>
             <button
               className="top-action top-action-danger"
               type="button"
@@ -201,8 +198,9 @@ export function ResumeManagementWorkspace({
             </button>
           </div>
         </div>
-        {runs.length ? (
+        {runs.length || pendingAnalysis ? (
           <div className="job-group-list">
+            {pendingAnalysis ? <PendingJobGroup pending={pendingAnalysis} /> : null}
             {runs.map((item) => (
               <article className={item.run_id === selectedRunId ? "job-group active" : "job-group"} key={item.run_id}>
                 <button type="button" onClick={() => onSelectRun(item.run_id)}>
@@ -278,7 +276,27 @@ export function ResumeManagementWorkspace({
           </div>
         )}
       </section>
+    </div>
+  );
+}
 
+export function AnalysisResultsWorkspace({
+  activeView,
+  report,
+  selectedCandidate,
+  onActiveViewChange,
+  onSelectCandidate
+}: {
+  activeView: ResultView;
+  report: RunReport | null;
+  selectedCandidate: CandidateReport | null;
+  onActiveViewChange: (view: ResultView) => void;
+  onSelectCandidate: (id: string) => void;
+}) {
+  return (
+    <div className="workspace-stack">
+      <PageTitle icon={BarChart3} title="分析结果" />
+      {report ? <LlmFallbackAlert report={report} /> : null}
       {report && selectedCandidate ? (
         <section className="card result-card">
           <RunSummary report={report} />
@@ -304,8 +322,43 @@ export function ResumeManagementWorkspace({
             </div>
           )}
         </section>
-      ) : null}
+      ) : (
+        <div className="card empty-state">
+          <h2>等待大模型评分结果</h2>
+          <p>请先在简历管理上传 JD 和简历，并开始智能筛选。</p>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PendingJobGroup({ pending }: { pending: PendingAnalysisGroup }) {
+  return (
+    <article className="job-group pending-job-group" aria-label="分析中的岗位分组">
+      <button type="button" disabled>
+        <Briefcase size={20} aria-hidden="true" />
+        <span>
+          <strong>{pending.title}</strong>
+          <small>
+            {new Date(pending.createdAt).toLocaleDateString("zh-CN")} · {pending.candidateNames.length} 份简历
+          </small>
+        </span>
+        <Loader2 className="spin" size={18} aria-hidden="true" />
+      </button>
+      <div className="job-candidate-table">
+        {pending.candidateNames.map((candidateName, index) => (
+          <div className="job-candidate-row pending-candidate-row" key={`${pending.id}-${candidateName}-${index}`}>
+            <span className="document-icon"><FileText size={20} aria-hidden="true" /></span>
+            <span className="candidate-cell">
+              <strong>{candidateName}</strong>
+              <small>评分未完成</small>
+            </span>
+            <span className="status-pending"><Loader2 className="spin" size={18} aria-hidden="true" /> 分析中</span>
+            <span className="score-cell pending-score">评分未完成</span>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -355,14 +408,16 @@ function FilePicker({
   multiple,
   onChange,
   label,
-  summary
+  files = [],
+  emptySummary
 }: {
   id: string;
   accept: string;
   multiple?: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   label: string;
-  summary: string;
+  files?: File[];
+  emptySummary: string;
 }) {
   return (
     <div className="file-picker">
@@ -378,11 +433,145 @@ function FilePicker({
         onChange={onChange}
         type="file"
       />
-      <span className="file-picker-summary">
-        <span>{summary}</span>
-      </span>
+      <div className={files.length ? "file-picker-summary file-picker-summary-selected" : "file-picker-summary"}>
+        {files.length ? (
+          <div className="file-chip-list">
+            {files.map((file) => (
+              <SelectedFileChip file={file} key={`${file.name}-${file.size}-${file.lastModified}`} />
+            ))}
+          </div>
+        ) : (
+          <span className="file-picker-empty">{emptySummary}</span>
+        )}
+      </div>
     </div>
   );
+}
+
+function LlmFallbackAlert({ report }: { report: RunReport }) {
+  const items = llmFallbackItems(report);
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <section className="llm-alert" role="alert" aria-label="LLM 服务调用失败">
+      <AlertCircle size={20} aria-hidden="true" />
+      <div className="llm-alert-main">
+        <strong>LLM 服务调用失败</strong>
+        <div className="llm-alert-list">
+          {items.map((item) => (
+            <span className="llm-alert-item" key={`${item.stage}-${item.reason}`}>
+              <b>{item.label}</b>
+              <small>按照预定义规则执行</small>
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function llmFallbackItems(report: RunReport) {
+  const items: Array<{ stage: string; label: string; reason: string; model: string }> = [];
+  for (const event of report.audit_events ?? []) {
+    if (!isLlmFallbackEvent(event)) {
+      continue;
+    }
+    items.push({
+      stage: event.stage,
+      label: llmStageLabel(event.stage),
+      reason: compactDisplayText(event.failure_code || event.message),
+      model: event.model ?? ""
+    });
+  }
+  if (!items.length) {
+    for (const warning of report.warnings ?? []) {
+      if (!warning.includes("LLM")) {
+        continue;
+      }
+      items.push({
+        stage: warningStage(warning),
+        label: llmStageLabel(warningStage(warning)),
+        reason: compactDisplayText(warning),
+        model: ""
+      });
+    }
+  }
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.stage}-${item.reason}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function isLlmFallbackEvent(event: AuditEvent) {
+  if (!event.fallback_strategy?.startsWith("local_rule")) {
+    return false;
+  }
+  return (
+    event.event.startsWith("extraction.") ||
+    event.event.startsWith("scoring.") ||
+    event.event.startsWith("question_generation.")
+  );
+}
+
+function llmStageLabel(stage: string) {
+  if (stage === "jd_extraction") return "JD 结构化抽取";
+  if (stage === "resume_extraction") return "简历结构化抽取";
+  if (stage === "resume_quality") return "简历质量分析";
+  if (stage === "rubric_generation" || stage === "requirement_matching") return "智能匹配打分";
+  if (stage === "question_generation") return "试题生成";
+  return "LLM 服务";
+}
+
+function warningStage(warning: string) {
+  if (warning.includes("JD")) return "jd_extraction";
+  if (warning.includes("简历")) return "resume_extraction";
+  return "llm";
+}
+
+function compactDisplayText(value: string) {
+  const text = value.trim();
+  if (text.length <= 120) {
+    return text;
+  }
+  return `${text.slice(0, 117)}...`;
+}
+
+function SelectedFileChip({ file }: { file: File }) {
+  const presentation = fileTypePresentation(file.name);
+  const Icon = presentation.icon;
+  return (
+    <span
+      aria-label={`已选择 ${presentation.label} 文件 ${file.name}`}
+      className={`file-chip file-chip-${presentation.kind}`}
+      title={file.name}
+    >
+      <span className="file-chip-logo" aria-hidden="true">
+        <Icon size={16} />
+      </span>
+      <span className="file-chip-kind">{presentation.label}</span>
+      <span className="file-chip-name">{file.name}</span>
+    </span>
+  );
+}
+
+function fileTypePresentation(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (extension === "pdf") {
+    return { icon: FileArchive, kind: "pdf", label: "PDF" };
+  }
+  if (extension === "docx" || extension === "doc") {
+    return { icon: FileText, kind: "docx", label: extension === "doc" ? "DOC" : "DOCX" };
+  }
+  if (extension === "txt") {
+    return { icon: FileType2, kind: "txt", label: "TXT" };
+  }
+  return { icon: FileQuestion, kind: "other", label: "FILE" };
 }
 
 function ResultNavigation({
@@ -516,7 +705,7 @@ function CandidateDetail({
       {view === "extraction" ? (
         <section className="detail-section">
           <h3>抽取过程</h3>
-          <ExtractionProcess jdFacts={jdExtractionFacts} profile={candidate.profile} resumeFacts={candidate.extraction_facts} />
+          <ExtractionProcess jdFacts={jdExtractionFacts} />
         </section>
       ) : null}
 
@@ -559,21 +748,11 @@ function CandidateDetail({
   );
 }
 
-function ExtractionProcess({
-  jdFacts,
-  profile,
-  resumeFacts
-}: {
-  jdFacts?: ExtractedFact[];
-  profile?: CandidateProfile;
-  resumeFacts?: ExtractedFact[];
-}) {
+function ExtractionProcess({ jdFacts }: { jdFacts?: ExtractedFact[] }) {
   const visibleJdFacts = (jdFacts ?? []).slice(0, 12);
-  const groupedResumeFacts = groupResumeFacts(resumeFacts ?? [], profile);
   return (
     <div className="extraction-grid">
       <ExtractionColumn title="JD 核心要求" facts={visibleJdFacts} emptyText="暂无 JD 抽取事实" />
-      <ResumeExtractionColumn groups={groupedResumeFacts} />
     </div>
   );
 }
@@ -595,57 +774,6 @@ function ExtractionColumn({ title, facts, emptyText }: { title: string; facts: E
         <p className="empty-facts">{emptyText}</p>
       )}
     </div>
-  );
-}
-
-function ResumeExtractionColumn({ groups }: { groups: FactGroup[] }) {
-  const total = groups.reduce((sum, group) => sum + group.facts.length, 0);
-  return (
-    <div className="extraction-column">
-      <div className="extraction-column-header">
-        <strong>简历中的重点</strong>
-        <span>{total} 项</span>
-      </div>
-      {groups.length ? (
-        <div className="section-fact-list">
-          {groups.map((group) => (
-            <FactSection group={group} key={group.section} />
-          ))}
-        </div>
-      ) : (
-        <p className="empty-facts">暂无简历中的重点</p>
-      )}
-    </div>
-  );
-}
-
-function FactSection({ group }: { group: FactGroup }) {
-  const skillFacts = group.facts.filter((fact) => fact.fact_type === "skill");
-  const otherFacts = group.facts.filter((fact) => fact.fact_type !== "skill").slice(0, 4);
-  return (
-    <section className="fact-section">
-      <div className="fact-section-header">
-        <h4>{SECTION_LABELS[group.section] ?? group.section}</h4>
-        <span>{group.facts.length} 项</span>
-      </div>
-      {skillFacts.length ? (
-        <article className="fact-row compact-skill-row">
-          <div className="fact-row-top">
-            <span className="fact-type">专业技能</span>
-          </div>
-          <div className="skill-chip-list">
-            {skillFacts.map((fact) => (
-              <span className="skill-chip" key={`${fact.value}-${fact.line_start ?? "line"}`}>
-                {fact.value}
-              </span>
-            ))}
-          </div>
-        </article>
-      ) : null}
-      {otherFacts.map((fact, index) => (
-        <FactRow fact={fact} key={`${fact.fact_type}-${fact.value}-${index}`} />
-      ))}
-    </section>
   );
 }
 

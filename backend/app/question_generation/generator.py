@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import CandidateProfile, ExtractedFact, InterviewQuestion, JDProfile, MatchReport
 
 
@@ -11,6 +12,7 @@ SYSTEM_PROMPT = "你是招聘面试题生成助手。只输出 JSON，不要输�
 TECHNICAL_CATEGORY = "technical_business"
 HR_CATEGORY = "hr"
 RESUME_BASIS = "resume"
+QUESTION_GENERATION_LLM_TIMEOUT_SECONDS = LLM_JSON_TIMEOUT_SECONDS
 
 
 def generate_interview_questions(
@@ -21,10 +23,30 @@ def generate_interview_questions(
     jd_text: str = "",
     resume_text: str = "",
     extraction_facts: Optional[Iterable[ExtractedFact]] = None,
+    diagnostics: Optional[dict[str, Any]] = None,
+    llm_timeout_seconds: float = QUESTION_GENERATION_LLM_TIMEOUT_SECONDS,
 ) -> List[InterviewQuestion]:
-    llm_questions = _generate_with_llm(llm, jd, candidate, match, jd_text, resume_text, extraction_facts or [])
+    if diagnostics is not None:
+        diagnostics["llm_timeout_seconds"] = llm_timeout_seconds
+    llm_questions = _generate_with_llm(
+        llm,
+        jd,
+        candidate,
+        match,
+        jd_text,
+        resume_text,
+        extraction_facts or [],
+        diagnostics=diagnostics,
+        llm_timeout_seconds=llm_timeout_seconds,
+    )
     if llm_questions is not None:
+        if diagnostics is not None:
+            diagnostics["question_generation_source"] = "llm"
+            diagnostics.pop("fallback_reason", None)
         return llm_questions
+    if diagnostics is not None:
+        diagnostics.setdefault("question_generation_source", "rule_fallback")
+        diagnostics.setdefault("fallback_reason", "llm_unavailable")
     return _generate_with_rules(jd, candidate, match)
 
 
@@ -36,19 +58,52 @@ def _generate_with_llm(
     jd_text: str,
     resume_text: str,
     extraction_facts: Iterable[ExtractedFact],
+    *,
+    diagnostics: Optional[dict[str, Any]] = None,
+    llm_timeout_seconds: float = QUESTION_GENERATION_LLM_TIMEOUT_SECONDS,
 ) -> Optional[List[InterviewQuestion]]:
     if not getattr(llm, "available", False):
+        _record_question_fallback(diagnostics, "llm_unavailable")
         return None
     try:
         payload = llm.complete_json(
             SYSTEM_PROMPT,
             _build_user_prompt(jd, candidate, match, jd_text, resume_text, list(extraction_facts)),
+            timeout=llm_timeout_seconds,
         )
-    except Exception:
+    except Exception as exc:
+        _record_question_fallback(diagnostics, f"{type(exc).__name__}: {exc}")
         return None
     if not isinstance(payload, dict):
+        _record_question_fallback(diagnostics, _llm_failure_reason(llm, payload))
         return None
-    return _parse_llm_questions(payload.get("questions"))
+    questions = _parse_llm_questions(payload.get("questions"))
+    if questions is None:
+        _record_question_fallback(diagnostics, "invalid_llm_question_payload")
+    return questions
+
+
+def _record_question_fallback(diagnostics: Optional[dict[str, Any]], reason: str) -> None:
+    if diagnostics is None:
+        return
+    diagnostics["question_generation_source"] = "rule_fallback"
+    diagnostics["fallback_reason"] = _compact_reason(reason)
+
+
+def _llm_failure_reason(llm: Any, payload: Any) -> str:
+    last_error = getattr(llm, "last_error", None)
+    if last_error:
+        return str(last_error)
+    if payload is None:
+        return "llm_returned_none"
+    return "invalid_llm_response"
+
+
+def _compact_reason(reason: str) -> str:
+    text = _clean_text(reason) or "unknown_question_generation_failure"
+    if len(text) <= 240:
+        return text
+    return f"{text[:237]}..."
 
 
 def _build_user_prompt(

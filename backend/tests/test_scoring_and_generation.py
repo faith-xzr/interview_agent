@@ -12,8 +12,8 @@ class QueueLLM:
         self.payloads = list(payloads)
         self.calls = []
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
-        self.calls.append((system_prompt, user_prompt))
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
+        self.calls.append((system_prompt, user_prompt, kwargs))
         return self.payloads.pop(0)
 
 
@@ -332,6 +332,53 @@ def test_llm_question_generation_uses_jd_resume_and_returns_lightweight_question
     assert "低延迟推荐项目" in llm.calls[0][1]
     assert "Kafka" in llm.calls[0][1]
     assert "{{" not in llm.calls[0][1]
+
+
+def test_llm_question_generation_records_llm_source_and_timeout():
+    llm = QueueLLM(
+        [
+            {
+                "questions": [
+                    {
+                        "question": f"模型生成面试题 {index + 1}",
+                        "focus": f"模型生成考察点 {index + 1}",
+                        "scoring_criteria": f"模型生成评分标准 {index + 1}",
+                        "category": "hr" if index == 9 else "technical_business",
+                        "basis": "resume" if index < 6 else ("general" if index == 9 else "jd"),
+                    }
+                    for index in range(10)
+                ]
+            }
+        ]
+    )
+    jd = JDProfile(job_title="AI Agent 工程师", required_skills=["Python"])
+    candidate = CandidateProfile(name="小周", skills=["Python"], projects=["RAG 项目"])
+    match = score_candidate(jd, candidate, ["RAG 项目 Python"])
+    diagnostics = {}
+
+    questions = generate_interview_questions(jd, candidate, match, llm=llm, diagnostics=diagnostics)
+
+    assert len(questions) == 10
+    assert llm.calls[0][2]["timeout"] == 90
+    assert diagnostics["question_generation_source"] == "llm"
+    assert diagnostics["llm_timeout_seconds"] == 90
+    assert "fallback_reason" not in diagnostics
+
+
+def test_llm_question_generation_records_rule_fallback_reason():
+    llm = QueueLLM([None])
+    jd = JDProfile(job_title="AI Agent 工程师", required_skills=["Python"])
+    candidate = CandidateProfile(name="小周", skills=["Python"], projects=["RAG 项目"])
+    match = score_candidate(jd, candidate, ["RAG 项目 Python"])
+    diagnostics = {}
+
+    questions = generate_interview_questions(jd, candidate, match, llm=llm, diagnostics=diagnostics)
+
+    assert len(questions) == 10
+    assert llm.calls[0][2]["timeout"] == 90
+    assert diagnostics["question_generation_source"] == "rule_fallback"
+    assert diagnostics["fallback_reason"] == "llm_returned_none"
+    assert questions[0].question == "请结合你最近的项目，说明你如何使用 Python 解决一个真实业务问题？"
 
 
 def test_rule_followup_generation_uses_job_title_as_context():

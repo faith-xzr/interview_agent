@@ -9,14 +9,17 @@ class LLMClient:
         self.base_url = (base_url or "").rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.last_error: Optional[str] = None
 
     @property
     def available(self) -> bool:
         return bool(self.base_url and self.api_key and self.model)
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+    def complete_json(self, system_prompt: str, user_prompt: str, *, timeout: float = 30) -> Optional[Dict[str, Any]]:
         if not self.available:
+            self.last_error = "llm_unavailable"
             return None
+        self.last_error = None
         url = f"{self.base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
@@ -29,10 +32,10 @@ class LLMClient:
             "response_format": {"type": "json_object"},
         }
         try:
-            response = httpx.post(url, headers=headers, json=payload, timeout=30)
+            response = httpx.post(url, headers=headers, json=payload, timeout=timeout)
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             return json.loads(content)
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
             return None
-

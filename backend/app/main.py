@@ -395,7 +395,22 @@ def create_app(settings: Settings = None) -> FastAPI:
         session = pipeline.storage.get_interview_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="未找到该面试会话。")
-        updated = finalize_interview_session(session)
+        report = pipeline.get_run(session.run_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="未找到该运行记录。")
+        candidate = next(
+            (item for item in report.candidates if item.candidate_id == session.candidate_id),
+            None,
+        )
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="未找到该候选人。")
+        updated = finalize_interview_session(
+            session,
+            llm=pipeline.llm,
+            run=report,
+            candidate=candidate,
+            skill_repository=pipeline.skill_repository,
+        )
         pipeline.storage.save_interview_session(updated)
         return updated
 
@@ -511,22 +526,14 @@ def create_app(settings: Settings = None) -> FastAPI:
                         await outbound_queue.put({"type": "error", "message": "识别文本不能为空。"})
                         continue
                     await outbound_queue.put({"type": "subtitle", "text": text, "isFinal": True})
-                    try:
-                        updated_session = await _submit_voice_transcript(
-                            voice_session.interview_session_id,
-                            text,
-                            pipeline,
-                        )
-                    except ValueError as exc:
-                        await outbound_queue.put({"type": "error", "message": str(exc)})
-                        continue
-                    except HTTPException as exc:
-                        await outbound_queue.put({"type": "error", "message": str(exc.detail)})
-                        continue
-                    await outbound_queue.put({
-                        "type": "interview_session",
-                        "session": updated_session.model_dump(mode="json"),
-                    })
+                    await _submit_voice_transcript_and_stream_tts(
+                        voice_session.interview_session_id,
+                        text,
+                        pipeline,
+                        outbound_queue,
+                        dashscope_api_key,
+                        voice_settings,
+                    )
                 elif message_type == "control" and message.get("action") == "speak_current_question":
                     current_session = pipeline.storage.get_interview_session(voice_session.interview_session_id)
                     if current_session is None:

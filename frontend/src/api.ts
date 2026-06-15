@@ -146,6 +146,9 @@ export async function deleteInterviewSession(sessionId: string): Promise<void> {
   const response = await fetch(`/api/interviews/${encodeURIComponent(sessionId)}`, {
     method: "DELETE"
   });
+  if (response.status === 404) {
+    return;
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "面试记录删除失败。" }));
     throw new Error(error.detail || "面试记录删除失败。");

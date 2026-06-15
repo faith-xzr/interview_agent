@@ -12,8 +12,8 @@ class QueueLLM:
         self.payloads = list(payloads)
         self.calls = []
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
-        self.calls.append((system_prompt, user_prompt))
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
+        self.calls.append((system_prompt, user_prompt, kwargs))
         return self.payloads.pop(0)
 
 

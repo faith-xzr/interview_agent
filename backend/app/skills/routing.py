@@ -1,6 +1,7 @@
 import json
 from typing import Any, Iterable, Optional, Sequence
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import AgentSkill, ExtractedFact, JDProfile, SkillRouteResult
 from app.skills.repository import SkillRepository
 
@@ -79,7 +80,11 @@ def route_skill_for_jd(
 
     fallback_reason_prefix = ""
     if getattr(llm, "available", False):
-        raw = llm.complete_json(SYSTEM_PROMPT, _build_route_prompt(jd_profile, jd_facts, candidates))
+        raw = llm.complete_json(
+            SYSTEM_PROMPT,
+            _build_route_prompt(jd_profile, jd_facts, candidates),
+            timeout=LLM_JSON_TIMEOUT_SECONDS,
+        )
         llm_result, invalid_reason = _parse_llm_result(raw, candidates)
         if llm_result is not None:
             skill, confidence, reason = llm_result

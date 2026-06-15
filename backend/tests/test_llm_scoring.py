@@ -10,8 +10,8 @@ class QueueLLM:
         self.payloads = list(payloads)
         self.calls = []
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
-        self.calls.append((system_prompt, user_prompt))
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
+        self.calls.append((system_prompt, user_prompt, kwargs))
         return self.payloads.pop(0)
 
 
@@ -143,6 +143,8 @@ def test_scoring_prompts_borrow_resume_audit_standards():
     assert report is not None
     rubric_prompt = llm.calls[0][1]
     matching_prompt = llm.calls[1][1]
+    assert llm.calls[0][2]["timeout"] == 90
+    assert llm.calls[1][2]["timeout"] == 90
     assert "项目技术深度" in rubric_prompt
     assert "技能匹配度" in rubric_prompt
     assert "技术实现 + 业务场景 + 结果量化" in rubric_prompt

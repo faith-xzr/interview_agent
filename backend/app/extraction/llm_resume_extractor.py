@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Tuple
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import CandidateProfile, ExtractedFact
 from app.text_utils import unique_preserve_order
 
@@ -91,7 +92,11 @@ def extract_resume_with_llm(
     if not text or not text.strip():
         return None
 
-    payload = llm.complete_json(SYSTEM_PROMPT, _build_user_prompt(text, source_name))
+    payload = llm.complete_json(
+        SYSTEM_PROMPT,
+        _build_user_prompt(text, source_name),
+        timeout=LLM_JSON_TIMEOUT_SECONDS,
+    )
     if not isinstance(payload, dict):
         return None
 

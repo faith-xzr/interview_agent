@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 from typing import Any, Iterable, List, Optional, Tuple
 
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.schemas import ExtractedFact, JDProfile
 
 PROMPT_PATH = (
@@ -58,7 +59,11 @@ def extract_jd_with_llm(llm, text: str) -> Optional[Tuple[JDProfile, List[Extrac
     if not text or not text.strip():
         return None
 
-    payload = llm.complete_json(SYSTEM_PROMPT, _build_user_prompt(text))
+    payload = llm.complete_json(
+        SYSTEM_PROMPT,
+        _build_user_prompt(text),
+        timeout=LLM_JSON_TIMEOUT_SECONDS,
+    )
     if not isinstance(payload, dict):
         return None
 

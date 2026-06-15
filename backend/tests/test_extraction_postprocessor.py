@@ -8,7 +8,7 @@ class FakeLLM:
     def __init__(self, payload):
         self.payload = payload
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
         return self.payload
 
 
@@ -18,7 +18,7 @@ class CapturingLLM:
     def __init__(self):
         self.user_prompt = ""
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
         self.user_prompt = user_prompt
         return {"profile": {}, "facts": []}
 

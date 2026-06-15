@@ -150,6 +150,31 @@ export interface InterviewFinalReport {
   risks: string[];
   summary: string;
   next_steps: string[];
+  category_scores?: InterviewCategoryScore[];
+  question_evaluations?: InterviewQuestionEvaluation[];
+  reference_answers?: InterviewReferenceAnswer[];
+}
+
+export interface InterviewCategoryScore {
+  category: string;
+  score: number;
+  question_count: number;
+}
+
+export interface InterviewQuestionEvaluation {
+  question_index: number;
+  question: string;
+  category: string;
+  user_answer: string;
+  score: number;
+  feedback: string;
+}
+
+export interface InterviewReferenceAnswer {
+  question_index: number;
+  question: string;
+  reference_answer: string;
+  key_points: string[];
 }
 
 export interface InterviewSession {
@@ -226,6 +251,36 @@ export interface ModelProviderSettingsResponse {
   providers: ModelProvider[];
 }
 
+export interface AuditEvent {
+  event: string;
+  stage: string;
+  failure_code: string;
+  message: string;
+  fallback_strategy: string;
+  run_id?: string | null;
+  candidate_id?: string | null;
+  model?: string | null;
+  prompt_version?: string | null;
+  invalid_requirements: string[];
+  details: Record<string, unknown>;
+}
+
+export interface ToolCallRecord {
+  call_id: string;
+  tool_name: string;
+  stage: string;
+  status: string;
+  run_id?: string | null;
+  candidate_id?: string | null;
+  input_summary: string;
+  output_summary: string;
+  error_message?: string | null;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  metadata: Record<string, unknown>;
+}
+
 export interface MatchReport {
   total_score: number;
   decision: string;
@@ -286,6 +341,8 @@ export interface RunReport {
   jd_extraction_facts: ExtractedFact[];
   candidates: CandidateReport[];
   warnings: string[];
+  audit_events?: AuditEvent[];
+  tool_calls?: ToolCallRecord[];
 }
 
 export type ResumeAnalyzeStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";

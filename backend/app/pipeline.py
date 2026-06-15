@@ -21,6 +21,7 @@ from app.extraction.resume_extractor import extract_resume_profile
 from app.fallback_ai import extract_jd_profile
 from app.followups import generate_followups
 from app.llm_client import LLMClient
+from app.llm_timeouts import LLM_JSON_TIMEOUT_SECONDS
 from app.policies import QUESTION_MATERIAL_MIN_SCORE
 from app.privacy import mask_pii, restore_pii_in_data
 from app.question_generation import generate_interview_questions
@@ -36,6 +37,7 @@ PROMPT_VERSIONS = {
     "resume_quality": "resume_quality@2026-06-14",
     "rubric_generation": "rubric_generation@2026-06-14",
     "requirement_matching": "requirement_matching@2026-06-14",
+    "question_generation": "interview_questions@2026-06-07",
 }
 SCORING_POLICY_VERSION = "backend_score_policy@v1"
 
@@ -82,7 +84,22 @@ class RecruitingPipeline:
                 input_summary=_summarize_text(jd_text),
                 metadata={"llm_available": self.llm.available},
             ) as tool_call:
-                jd_profile, jd_extraction_facts = self._extract_jd(jd_text, warnings)
+                jd_diagnostics: dict[str, object] = {}
+                jd_profile, jd_extraction_facts = self._extract_jd(
+                    jd_text,
+                    warnings,
+                    diagnostics=jd_diagnostics,
+                )
+                tool_call.metadata.update(jd_diagnostics)
+                if jd_diagnostics.get("extraction_source") == "rule_fallback":
+                    self._record_llm_fallback(
+                        audit_events,
+                        event="extraction.jd_llm_fallback",
+                        stage="jd_extraction",
+                        fallback_strategy="local_rule_extraction",
+                        diagnostics=jd_diagnostics,
+                        run_id=run_id,
+                    )
                 tool_call.set_output_summary(
                     f"{jd_profile.job_title}; facts={len(jd_extraction_facts)}"
                 )
@@ -142,7 +159,24 @@ class RecruitingPipeline:
                 input_summary=source_name,
                 metadata={"llm_available": self.llm.available},
             ) as tool_call:
-                profile, extraction_facts = self._extract_candidate(resume_text, source_name, warnings)
+                extraction_diagnostics: dict[str, object] = {}
+                profile, extraction_facts = self._extract_candidate(
+                    resume_text,
+                    source_name,
+                    warnings,
+                    diagnostics=extraction_diagnostics,
+                )
+                tool_call.metadata.update(extraction_diagnostics)
+                if extraction_diagnostics.get("extraction_source") == "rule_fallback":
+                    self._record_llm_fallback(
+                        audit_events,
+                        event="extraction.resume_llm_fallback",
+                        stage="resume_extraction",
+                        fallback_strategy="local_rule_extraction",
+                        diagnostics=extraction_diagnostics,
+                        run_id=run_id,
+                        candidate_id=candidate_id,
+                    )
                 tool_call.set_output_summary(f"{profile.name}; facts={len(extraction_facts)}")
 
             if existing_run is None:
@@ -176,12 +210,36 @@ class RecruitingPipeline:
                 input_summary=f"{profile.name} 简历质量",
                 metadata={"llm_available": self.llm.available},
             ) as tool_call:
+                resume_quality_failures: List[dict] = []
                 resume_quality_report = score_resume_quality(
                     self.llm,
                     resume_text,
                     profile,
                     extraction_facts,
+                    failure_sink=resume_quality_failures,
                 )
+                if resume_quality_failures:
+                    tool_call.metadata.update(
+                        _stage_fallback_metadata(
+                            resume_quality_failures,
+                            source_key="resume_quality_source",
+                        )
+                    )
+                    self._record_stage_fallbacks(
+                        audit_events,
+                        resume_quality_failures,
+                        event_name="resume_quality.llm_fallback",
+                        fallback_strategy="local_rule_resume_quality",
+                        run_id=run_id,
+                        candidate_id=candidate_id,
+                    )
+                elif self.llm.available:
+                    tool_call.metadata.update(
+                        {
+                            "resume_quality_source": "llm",
+                            "llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS,
+                        }
+                    )
                 tool_call.set_output_summary(
                     f"overall={resume_quality_report.overall_score}"
                 )
@@ -212,6 +270,9 @@ class RecruitingPipeline:
                     failure_sink=scoring_failures,
                 )
                 if match is None:
+                    tool_call.metadata.update(
+                        _stage_fallback_metadata(scoring_failures, source_key="scoring_source")
+                    )
                     self._record_scoring_fallbacks(
                         audit_events,
                         scoring_failures,
@@ -219,6 +280,13 @@ class RecruitingPipeline:
                         candidate_id=candidate_id,
                     )
                     match = score_candidate(jd_profile, profile, evidence_texts, extraction_facts)
+                else:
+                    tool_call.metadata.update(
+                        {
+                            "scoring_source": "llm",
+                            "llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS,
+                        }
+                    )
                 tool_call.set_output_summary(f"score={match.total_score}; decision={match.decision}")
 
             if existing_run is None:
@@ -231,6 +299,7 @@ class RecruitingPipeline:
 
             if match.total_score >= QUESTION_MATERIAL_MIN_SCORE:
                 question_resume_text = mask_pii(resume_text, candidate_name=profile.name).text
+                question_diagnostics: dict[str, object] = {}
                 with tool_recorder.call(
                     "generate_interview_questions",
                     "generate_interview_materials",
@@ -249,8 +318,17 @@ class RecruitingPipeline:
                         jd_text=jd_text,
                         resume_text=question_resume_text,
                         extraction_facts=extraction_facts,
+                        diagnostics=question_diagnostics,
                     )
                     match.followup_questions = generate_followups(profile, match, jd=jd_profile)
+                    tool_call.metadata.update(question_diagnostics)
+                    if question_diagnostics.get("question_generation_source") == "rule_fallback":
+                        self._record_question_generation_fallback(
+                            audit_events,
+                            question_diagnostics,
+                            run_id=run_id,
+                            candidate_id=candidate_id,
+                        )
                     tool_call.set_output_summary(
                         f"questions={len(match.interview_questions)}; followups={len(match.followup_questions)}"
                     )
@@ -354,16 +432,27 @@ class RecruitingPipeline:
         safe_name = _safe_source_filename(filename)
         return Path(self.settings.data_dir) / "run_uploads" / run_id / candidate_id / safe_name
 
-    def _extract_jd(self, text: str, warnings: List[str]) -> Tuple[JDProfile, List[ExtractedFact]]:
+    def _extract_jd(
+        self,
+        text: str,
+        warnings: List[str],
+        *,
+        diagnostics: Optional[dict[str, object]] = None,
+    ) -> Tuple[JDProfile, List[ExtractedFact]]:
         if self.llm.available:
             llm_result = extract_jd_with_llm(self.llm, text)
             if llm_result is not None:
                 profile, facts = llm_result
                 if facts:
+                    _record_llm_success(diagnostics, source="llm")
                     return profile, facts
                 warnings.append("JD 的 LLM 抽取未返回可用事实，已回退本地规则结果。")
+                _record_llm_fallback_diagnostics(diagnostics, self.llm, "llm_returned_no_facts")
             else:
                 warnings.append("JD 的 LLM 抽取失败，已回退本地规则结果。")
+                _record_llm_fallback_diagnostics(diagnostics, self.llm, "llm_returned_none")
+        else:
+            _record_llm_fallback_diagnostics(diagnostics, self.llm, "llm_unavailable")
         return self._extract_jd_with_rules(text)
 
     def _extract_jd_with_rules(self, text: str) -> Tuple[JDProfile, List[ExtractedFact]]:
@@ -372,7 +461,12 @@ class RecruitingPipeline:
         return profile, facts
 
     def _extract_candidate(
-        self, text: str, source_name: str, warnings: List[str]
+        self,
+        text: str,
+        source_name: str,
+        warnings: List[str],
+        *,
+        diagnostics: Optional[dict[str, object]] = None,
     ) -> Tuple[CandidateProfile, List[ExtractedFact]]:
         initial_result = extract_resume_profile(text, source_name)
         initial_profile = initial_result.profile
@@ -391,8 +485,12 @@ class RecruitingPipeline:
                     [ExtractedFact.model_validate(fact) for fact in restored_facts],
                     initial_result.facts,
                 )
+                _record_llm_success(diagnostics, source="llm_plus_rules")
                 return _merge_candidate_profile(profile, initial_profile), extraction_facts
             warnings.append(f"{source_name} 的 LLM 简历抽取失败，已使用本地规则结果。")
+            _record_llm_fallback_diagnostics(diagnostics, self.llm, "llm_returned_none")
+        else:
+            _record_llm_fallback_diagnostics(diagnostics, self.llm, "llm_unavailable")
         return initial_profile, initial_result.facts
 
     def _record_scoring_fallbacks(
@@ -412,6 +510,7 @@ class RecruitingPipeline:
                     "failure_code": "llm_scoring_unavailable",
                     "message": "LLM scoring returned no report without a detailed failure reason.",
                     "invalid_requirements": [],
+                    "details": {"llm_timeout_seconds": LLM_JSON_TIMEOUT_SECONDS},
                 }
             ]
         for failure in failures:
@@ -430,7 +529,136 @@ class RecruitingPipeline:
                 model=self.settings.llm_model,
                 prompt_version=prompt_version,
                 invalid_requirements=failure.get("invalid_requirements", []),
+                details=failure.get("details", {}),
             )
+
+    def _record_stage_fallbacks(
+        self,
+        audit_events,
+        failures: List[dict],
+        *,
+        event_name: str,
+        fallback_strategy: str,
+        run_id: str,
+        candidate_id: Optional[str] = None,
+    ) -> None:
+        if not self.llm.available:
+            return
+        for failure in failures:
+            stage = failure.get("stage", "llm")
+            record_audit_event(
+                audit_events,
+                event=event_name,
+                stage=stage,
+                failure_code=failure.get("failure_code", "unknown_llm_failure"),
+                message=failure.get("message", "LLM stage failed."),
+                fallback_strategy=fallback_strategy,
+                run_id=run_id,
+                candidate_id=candidate_id,
+                model=self.settings.llm_model,
+                prompt_version=PROMPT_VERSIONS.get(stage),
+                invalid_requirements=failure.get("invalid_requirements", []),
+                details=failure.get("details", {}),
+            )
+
+    def _record_llm_fallback(
+        self,
+        audit_events,
+        *,
+        event: str,
+        stage: str,
+        fallback_strategy: str,
+        diagnostics: dict[str, object],
+        run_id: str,
+        candidate_id: Optional[str] = None,
+    ) -> None:
+        if not self.llm.available:
+            return
+        reason = str(diagnostics.get("fallback_reason") or "unknown_llm_failure")
+        record_audit_event(
+            audit_events,
+            event=event,
+            stage=stage,
+            failure_code=reason,
+            message=f"{stage} LLM request failed; local fallback was used.",
+            fallback_strategy=fallback_strategy,
+            run_id=run_id,
+            candidate_id=candidate_id,
+            model=self.settings.llm_model,
+            prompt_version=PROMPT_VERSIONS.get(stage),
+            details={
+                "llm_timeout_seconds": diagnostics.get("llm_timeout_seconds"),
+                "extraction_source": diagnostics.get("extraction_source"),
+            },
+        )
+
+    def _record_question_generation_fallback(
+        self,
+        audit_events,
+        diagnostics: dict[str, object],
+        *,
+        run_id: str,
+        candidate_id: str,
+    ) -> None:
+        record_audit_event(
+            audit_events,
+            event="question_generation.llm_fallback",
+            stage="question_generation",
+            failure_code=str(diagnostics.get("fallback_reason") or "unknown_question_generation_failure"),
+            message="LLM question generation failed; local rule questions were used.",
+            fallback_strategy="local_rule_questions",
+            run_id=run_id,
+            candidate_id=candidate_id,
+            model=self.settings.llm_model,
+            prompt_version=PROMPT_VERSIONS["question_generation"],
+            details={
+                "llm_timeout_seconds": diagnostics.get("llm_timeout_seconds"),
+                "question_generation_source": diagnostics.get("question_generation_source"),
+            },
+        )
+
+
+def _record_llm_success(diagnostics: Optional[dict[str, object]], *, source: str) -> None:
+    if diagnostics is None:
+        return
+    diagnostics["extraction_source"] = source
+    diagnostics["llm_timeout_seconds"] = LLM_JSON_TIMEOUT_SECONDS
+    diagnostics.pop("fallback_reason", None)
+
+
+def _record_llm_fallback_diagnostics(
+    diagnostics: Optional[dict[str, object]],
+    llm: LLMClient,
+    default_reason: str,
+) -> None:
+    if diagnostics is None:
+        return
+    reason = getattr(llm, "last_error", None) or default_reason
+    diagnostics["extraction_source"] = "rule_fallback"
+    diagnostics["fallback_reason"] = _compact_reason(str(reason))
+    diagnostics["llm_timeout_seconds"] = LLM_JSON_TIMEOUT_SECONDS
+
+
+def _stage_fallback_metadata(failures: List[dict], *, source_key: str) -> dict[str, object]:
+    failure = failures[0] if failures else {}
+    details = failure.get("details") if isinstance(failure.get("details"), dict) else {}
+    metadata: dict[str, object] = {
+        source_key: "rule_fallback",
+        "fallback_stage": failure.get("stage", "requirement_matching"),
+        "fallback_reason": failure.get("failure_code", "llm_scoring_unavailable"),
+        "llm_timeout_seconds": details.get("llm_timeout_seconds", LLM_JSON_TIMEOUT_SECONDS),
+    }
+    invalid_requirements = failure.get("invalid_requirements")
+    if invalid_requirements:
+        metadata["invalid_requirements"] = invalid_requirements
+    return metadata
+
+
+def _compact_reason(reason: str) -> str:
+    text = " ".join((reason or "unknown_llm_failure").split())
+    if len(text) <= 240:
+        return text
+    return f"{text[:237]}..."
 
 
 def _merge_candidate_profile(profile: CandidateProfile, fallback: CandidateProfile) -> CandidateProfile:

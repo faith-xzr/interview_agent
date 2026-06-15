@@ -8,10 +8,12 @@ class CapturingLLM:
         self.payload = payload
         self.system_prompt = ""
         self.user_prompt = ""
+        self.kwargs = {}
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
+        self.kwargs = kwargs
         return self.payload
 
 
@@ -76,6 +78,7 @@ FastAPI、SQL、React
     assert "不要输出 domain_evidence" in llm.user_prompt
     assert "相邻行表达同一段职责、项目或亮点时，必须合并成一条完整短句" in llm.user_prompt
     assert "{{RESUME_TEXT}}" not in llm.user_prompt
+    assert llm.kwargs["timeout"] == 90
     assert profile.education == ["某理工大学计算机科学与技术本科，GPA 3.7/4.0。"]
     assert profile.work_experiences == [
         "头部互联网平台后端开发实习生：参与招聘智能体后台接口与数据处理，负责 FastAPI 服务、SQL 查询和接口联调。"

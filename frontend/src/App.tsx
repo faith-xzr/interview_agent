@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bot,
   ChevronRight,
   FileStack,
@@ -21,17 +22,18 @@ import type {
   InterviewSession,
   RunReport
 } from "./types";
-import type { InputMode, ResultView } from "./workspaceTypes";
+import type { InputMode, PendingAnalysisGroup, ResultView } from "./workspaceTypes";
 import { InterviewRecordsWorkspace } from "./workspaces/InterviewRecordsWorkspace";
 import { MockInterviewWorkspace } from "./workspaces/MockInterviewWorkspace";
-import { ResumeManagementWorkspace } from "./workspaces/ResumeManagementWorkspace";
+import { AnalysisResultsWorkspace, ResumeManagementWorkspace } from "./workspaces/ResumeManagementWorkspace";
 import { SettingsWorkspace } from "./workspaces/SettingsWorkspace";
 import "./styles.css";
 
-type WorkspaceView = "resumes" | "interview" | "records" | "settings";
+type WorkspaceView = "resumes" | "analysis" | "interview" | "records" | "settings";
 
 const ROUTES: Record<WorkspaceView, string> = {
   resumes: "/history",
+  analysis: "/analysis",
   interview: "/interview-hub",
   records: "/interviews",
   settings: "/settings"
@@ -49,6 +51,8 @@ function workspaceFromPath(pathname: string): WorkspaceView {
     case "/":
     case "/history":
       return "resumes";
+    case "/analysis":
+      return "analysis";
     case "/interview-hub":
       return "interview";
     case "/interviews":
@@ -73,8 +77,9 @@ const WORKSPACE_GROUPS: Array<{
     title: "面试准备",
     items: [
       { id: "resumes", label: "简历管理", description: "按 JD 分组给简历打分", icon: FileStack },
-      { id: "interview", label: "模拟面试", description: "配置面试练习", icon: Sparkles },
-      { id: "records", label: "面试记录", description: "管理面试历史", icon: Users }
+      { id: "analysis", label: "分析结果", description: "AI简历解析与评分", icon: BarChart3 },
+      { id: "interview", label: "模拟面试", description: "配置面试流程", icon: Sparkles },
+      { id: "records", label: "面试记录", description: "管理面试历史记录", icon: Users }
     ]
   },
   {
@@ -84,6 +89,27 @@ const WORKSPACE_GROUPS: Array<{
     ]
   }
 ];
+
+function createPendingAnalysisGroup({
+  resumeFiles,
+  resumeText,
+  resumeInputMode
+}: {
+  resumeFiles: File[];
+  resumeText: string;
+  resumeInputMode: InputMode;
+}): PendingAnalysisGroup {
+  const candidateNames =
+    resumeInputMode === "file" && resumeFiles.length
+      ? resumeFiles.map((file) => file.name)
+      : [resumeText.trim().split(/\s|，|,|\n/).filter(Boolean)[0] || "文本简历"];
+  return {
+    id: `pending-${Date.now()}`,
+    title: "等待大模型评分结果",
+    candidateNames,
+    createdAt: new Date().toISOString()
+  };
+}
 
 export default function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>(() =>
@@ -100,7 +126,9 @@ export default function App() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ResultView>("overview");
+  const [pendingAnalysis, setPendingAnalysis] = useState<PendingAnalysisGroup | null>(null);
   const [interviewSessions, setInterviewSessions] = useState<InterviewSession[]>([]);
+  const [resumeInterviewSession, setResumeInterviewSession] = useState<InterviewSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recordsError, setRecordsError] = useState<string | null>(null);
@@ -166,6 +194,12 @@ export default function App() {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    const pending = createPendingAnalysisGroup({
+      resumeFiles,
+      resumeText,
+      resumeInputMode
+    });
+    setPendingAnalysis(pending);
     try {
       const nextReport = await createRun({
         jdText: jdInputMode === "text" ? jdText : "",
@@ -177,9 +211,11 @@ export default function App() {
       setRuns((current) => [nextReport, ...current.filter((item) => item.run_id !== nextReport.run_id)]);
       setSelectedRunId(nextReport.run_id);
       setSelectedId(nextReport.candidates[0]?.candidate_id ?? null);
+      setPendingAnalysis(null);
       navigateWorkspace("resumes");
       setActiveView("overview");
     } catch (err) {
+      setPendingAnalysis(null);
       setError(err instanceof Error ? err.message : "请求失败，请检查输入后重试。");
     } finally {
       setLoading(false);
@@ -192,6 +228,7 @@ export default function App() {
 
   function handleSelectRun(runId: string) {
     const nextRun = runs.find((item) => item.run_id === runId);
+    setResumeInterviewSession(null);
     setSelectedRunId(runId);
     setReport(nextRun ?? report);
     setSelectedId(nextRun?.candidates[0]?.candidate_id ?? null);
@@ -201,6 +238,29 @@ export default function App() {
   function handleSessionChange(session: InterviewSession) {
     setRecordsError(null);
     setInterviewSessions((current) => [session, ...current.filter((item) => item.session_id !== session.session_id)]);
+    setResumeInterviewSession((current) => (current?.session_id === session.session_id ? session : current));
+  }
+
+  function handleResumeInterviewSession(session: InterviewSession) {
+    const availableRuns = report
+      ? [report, ...runs.filter((item) => item.run_id !== report.run_id)]
+      : runs;
+    const nextRun = availableRuns.find((item) => item.run_id === session.run_id);
+    if (!nextRun) {
+      setRecordsError("无法继续该面试：找不到对应的简历分析结果。");
+      return;
+    }
+    const nextCandidate = nextRun.candidates.find((candidate) => candidate.candidate_id === session.candidate_id);
+    if (!nextCandidate) {
+      setRecordsError("无法继续该面试：找不到对应的候选人。");
+      return;
+    }
+    setRecordsError(null);
+    setSelectedRunId(nextRun.run_id);
+    setReport(nextRun);
+    setSelectedId(nextCandidate.candidate_id);
+    setResumeInterviewSession(session);
+    navigateWorkspace("interview");
   }
 
   async function handleDeleteSession(sessionId: string) {
@@ -208,6 +268,7 @@ export default function App() {
     try {
       await deleteInterviewSession(sessionId);
       setInterviewSessions((current) => current.filter((item) => item.session_id !== sessionId));
+      setResumeInterviewSession((current) => (current?.session_id === sessionId ? null : current));
     } catch (err) {
       setRecordsError(err instanceof Error ? err.message : "面试记录删除失败。");
     }
@@ -221,6 +282,7 @@ export default function App() {
       const nextSessions = await listInterviewSessions();
       setRuns(nextRuns);
       setInterviewSessions(nextSessions);
+      setResumeInterviewSession(null);
 
       const nextSelectedRun = nextRuns.find((item) => item.run_id === selectedRunId) ?? null;
       if (!nextRuns.length) {
@@ -261,6 +323,8 @@ export default function App() {
       setReport(null);
       setSelectedRunId(null);
       setSelectedId(null);
+      setPendingAnalysis(null);
+      setResumeInterviewSession(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "全部历史上传清空失败。")
     }
@@ -272,20 +336,17 @@ export default function App() {
       <main className="workspace-main">
         {activeWorkspace === "resumes" ? (
           <ResumeManagementWorkspace
-            activeView={activeView}
             error={error}
             jdFile={jdFile}
             jdInputMode={jdInputMode}
             jdText={jdText}
             loading={loading}
-            report={selectedRun}
+            pendingAnalysis={pendingAnalysis}
             resumeFiles={resumeFiles}
             resumeInputMode={resumeInputMode}
             resumeText={resumeText}
             runs={runs}
-            selectedCandidate={selectedCandidate}
             selectedRunId={selectedRun?.run_id ?? null}
-            onActiveViewChange={setActiveView}
             onJdFileChange={setJdFile}
             onJdInputModeChange={setJdInputMode}
             onJdTextChange={setJdText}
@@ -300,12 +361,24 @@ export default function App() {
           />
         ) : null}
 
+        {activeWorkspace === "analysis" ? (
+          <AnalysisResultsWorkspace
+            activeView={activeView}
+            report={selectedRun}
+            selectedCandidate={selectedCandidate}
+            onActiveViewChange={setActiveView}
+            onSelectCandidate={setSelectedId}
+          />
+        ) : null}
+
         {activeWorkspace === "interview" ? (
           <MockInterviewWorkspace
             report={selectedRun}
             selectedCandidate={selectedCandidate}
             onSelectCandidate={setSelectedId}
             onSessionChange={handleSessionChange}
+            resumeSession={resumeInterviewSession}
+            onResumeSessionConsumed={() => setResumeInterviewSession(null)}
           />
         ) : null}
 
@@ -315,6 +388,7 @@ export default function App() {
             sessions={interviewSessions}
             runs={runs}
             onDeleteSession={handleDeleteSession}
+            onResumeSession={handleResumeInterviewSession}
           />
         ) : null}
 

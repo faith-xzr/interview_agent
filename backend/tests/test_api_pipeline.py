@@ -35,8 +35,8 @@ class QueueLLM:
         self.payloads = list(payloads)
         self.calls = []
 
-    def complete_json(self, system_prompt: str, user_prompt: str):
-        self.calls.append((system_prompt, user_prompt))
+    def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
+        self.calls.append((system_prompt, user_prompt, kwargs))
         return self.payloads.pop(0)
 
 
@@ -1238,6 +1238,48 @@ def test_pipeline_logs_and_audits_llm_matching_fallback(tmp_path, caplog, monkey
     assert report.candidates[0].match_report.total_score == 39
 
 
+def test_pipeline_exposes_llm_fallbacks_in_audit_and_tool_metadata(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+
+    class TimeoutLLM:
+        available = True
+        last_error = "ReadTimeout: request timed out"
+
+        def complete_json(self, system_prompt: str, user_prompt: str, **kwargs):
+            return None
+
+    pipeline.llm = TimeoutLLM()
+
+    report = pipeline.run(
+        "AI Agent 工程师，负责 RAG 系统建设，要求 Python 和 LangChain。",
+        [("小王.txt", "小王\n项目经历\n• RAG 系统：使用 Python 构建检索链路。\n专业技能\nPython、LangChain")],
+    )
+
+    events = {event.event: event for event in report.audit_events}
+    assert "extraction.jd_llm_fallback" in events
+    assert "extraction.resume_llm_fallback" in events
+    assert "scoring.rubric_invalid" in events
+    assert events["extraction.jd_llm_fallback"].details["llm_timeout_seconds"] == 90
+    assert "ReadTimeout" in events["extraction.resume_llm_fallback"].failure_code
+
+    extract_jd_tool = next(item for item in report.tool_calls if item.tool_name == "extract_jd")
+    extract_resume_tool = next(item for item in report.tool_calls if item.tool_name == "extract_resume")
+    score_tool = next(item for item in report.tool_calls if item.tool_name == "score_candidate")
+    assert extract_jd_tool.metadata["extraction_source"] == "rule_fallback"
+    assert extract_resume_tool.metadata["extraction_source"] == "rule_fallback"
+    assert score_tool.metadata["scoring_source"] == "rule_fallback"
+    assert score_tool.metadata["fallback_stage"] == "rubric_generation"
+
+
 def test_pipeline_skips_question_materials_when_match_score_is_below_40(tmp_path, monkeypatch):
     settings = Settings(
         data_dir=tmp_path,
@@ -1463,6 +1505,114 @@ Python | Kafka | Flink
     assert len(pipeline.llm.calls) == 5
     assert "低延迟推荐项目" in pipeline.llm.calls[-1][1]
     assert "高级推荐系统后端工程师" in pipeline.llm.calls[-1][1]
+    question_tool = next(item for item in report.tool_calls if item.tool_name == "generate_interview_questions")
+    assert question_tool.metadata["question_generation_source"] == "llm"
+    assert question_tool.metadata["llm_timeout_seconds"] == 90
+
+
+def test_pipeline_audits_question_generation_rule_fallback(tmp_path):
+    settings = Settings(
+        data_dir=tmp_path,
+        database_path=tmp_path / "demo.sqlite3",
+        vector_dir=tmp_path / "vectors",
+        llm_api_key=None,
+        llm_base_url=None,
+        llm_model="demo-offline",
+        enable_chroma=False,
+    )
+    pipeline = RecruitingPipeline(settings)
+    jd_text = "高级推荐系统后端工程师，负责 FastAPI 推荐平台建设，要求 Kafka、Flink 和推荐链路优化经验。"
+    resume_text = """
+小周
+项目经历
+• 低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python，推荐链路延迟降低 30%。
+专业技能
+Python | Kafka | Flink
+"""
+    pipeline.llm = QueueLLM(
+        [
+            {
+                "key_points": [
+                    {
+                        "topic": "必备技能",
+                        "summary": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "evidence": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "importance": "high",
+                        "category": "skill",
+                    }
+                ],
+            },
+            {
+                "profile": {
+                    "name": "候选人",
+                    "projects": ["低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。"],
+                    "skills": ["Python", "Kafka", "Flink"],
+                    "highlights": ["推荐链路延迟降低 30%"],
+                },
+                "facts": [
+                    {
+                        "label": "项目经验",
+                        "category": "project",
+                        "summary": "低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python。",
+                        "evidence": "• 低延迟推荐项目：负责召回链路优化，使用 Kafka、Flink 和 Python，推荐链路延迟降低 30%。",
+                        "section": "projects",
+                        "importance": "high",
+                    }
+                ],
+            },
+            {
+                "rubric": [
+                    {
+                        "dimension": "推荐工程",
+                        "requirement": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "requirement_type": "core_skill",
+                        "max_score": 60,
+                        "priority": "must_have",
+                    },
+                    {
+                        "dimension": "后端平台",
+                        "requirement": "负责 FastAPI 推荐平台建设",
+                        "requirement_type": "responsibility",
+                        "max_score": 40,
+                        "priority": "must_have",
+                    },
+                ]
+            },
+            {
+                "matches": [
+                    {
+                        "requirement": "要求 Kafka、Flink 和推荐链路优化经验",
+                        "status": "强匹配",
+                        "confidence": 0.95,
+                        "contribution": 58,
+                        "reason": "简历项目直接覆盖 Kafka、Flink 和推荐链路优化",
+                        "evidence_indexes": [0],
+                    },
+                    {
+                        "requirement": "负责 FastAPI 推荐平台建设",
+                        "status": "相关匹配",
+                        "confidence": 0.7,
+                        "contribution": 24,
+                        "reason": "简历有 Python 后端经验，但 FastAPI 证据较弱",
+                        "evidence_indexes": [0],
+                    },
+                ]
+            },
+            None,
+        ]
+    )
+
+    report = pipeline.run(jd_text, [("小周.txt", resume_text)])
+
+    questions = report.candidates[0].match_report.interview_questions
+    assert questions[0].question == "请结合你最近的项目，说明你如何使用 Python 解决一个真实业务问题？"
+    question_tool = next(item for item in report.tool_calls if item.tool_name == "generate_interview_questions")
+    assert question_tool.metadata["question_generation_source"] == "rule_fallback"
+    assert question_tool.metadata["fallback_reason"] == "llm_returned_none"
+    assert question_tool.metadata["llm_timeout_seconds"] == 90
+    audit_event = next(item for item in report.audit_events if item.event == "question_generation.llm_fallback")
+    assert audit_event.fallback_strategy == "local_rule_questions"
+    assert audit_event.failure_code == "llm_returned_none"
 
 
 def test_pipeline_keeps_rule_facts_when_llm_resume_returns_partial_facts(tmp_path):
