@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -44,6 +44,10 @@ const demoReport = {
     {
       candidate_id: "candidate-1",
       source_name: "resume-1.txt",
+      source_file: {
+        filename: "resume-1.txt",
+        content_type: "text/plain"
+      },
       profile: {
         name: "王五",
         contacts: { phone: "13812345678" },
@@ -262,6 +266,12 @@ const startedInterviewSession = {
   run_id: "run-1",
   candidate_id: "candidate-1",
   mode: "structured",
+  direction: "Python 后端开发",
+  difficulty: "mid",
+  interviewer_style: "friendly_hr",
+  skill_id: "python-backend",
+  skill_name: "Python 后端开发",
+  flow: ["Python 基础", "数据库", "Django/Flask"],
   status: "active",
   created_at: "2026-06-03T10:10:00Z",
   updated_at: "2026-06-03T10:10:00Z",
@@ -274,6 +284,16 @@ const startedInterviewSession = {
   },
   turns: [],
   final_report: null
+};
+
+const demoSkillRoute = {
+  position_name: "高级 Python 后端工程师",
+  skill_id: "python-backend",
+  skill_name: "Python 后端开发",
+  route_result: "高级 Python 后端工程师 / Python 后端开发",
+  confidence: 0.88,
+  reason: "JD 强调 Python、FastAPI、SQL 和后端服务建设。",
+  source: "llm"
 };
 
 const interviewSessionAfterTurn = {
@@ -328,6 +348,15 @@ const completedInterviewSession = {
     summary: "本次面试完成 1 轮问答。候选人平均表达清晰度 42 分，回答深度 36 分，证据一致性为 weak。",
     next_steps: ["继续要求候选人给出指标口径、基线、提升幅度和验证方式。"]
   }
+};
+
+const startedVoiceSession = {
+  voice_session_id: "voice-1",
+  interview_session_id: "interview-1",
+  status: "active",
+  websocket_url: "/ws/voice-interviews/voice-1",
+  created_at: "2026-06-03T10:10:01Z",
+  updated_at: "2026-06-03T10:10:01Z"
 };
 
 const defaultModelProviders = {
@@ -397,6 +426,7 @@ const deepseekSavedKeyProviders = {
 describe("App", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.history.replaceState({}, "", "/history");
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -412,7 +442,19 @@ describe("App", () => {
           headers: { "Content-Type": "application/json" }
         });
       }
+      if (url.endsWith("/api/runs/run-1/skill-route") && method === "GET") {
+        return new Response(JSON.stringify(demoSkillRoute), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/resumes") && method === "GET") {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -432,6 +474,12 @@ describe("App", () => {
       }
       if (url.endsWith("/api/runs/run-1/interviews")) {
         return new Response(JSON.stringify(startedInterviewSession), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/voice-interviews") && method === "POST") {
+        return new Response(JSON.stringify(startedVoiceSession), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
@@ -496,10 +544,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /模拟面试/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /面试记录/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /设置/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /简历评分/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("单独评估技术深度与表达")).not.toBeInTheDocument();
     expect(screen.queryByText("知识库")).not.toBeInTheDocument();
     expect(screen.queryByText("面试日程")).not.toBeInTheDocument();
+    expect(screen.getByText("按 JD 分组给简历打分")).toBeInTheDocument();
+    expect(screen.queryByText("按 JD 分组分析")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "简历管理" })).toBeInTheDocument();
-    expect(screen.getByText("按岗位 JD 分组管理简历与分析结果")).toBeInTheDocument();
+    expect(screen.queryByText("按岗位 JD 分组管理简历与分析结果")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "上传简历" })).not.toBeInTheDocument();
+    expect(screen.getByText("选择简历文件")).toBeInTheDocument();
+    expect(screen.getByText("支持 PDF / DOCX / TXT")).toBeInTheDocument();
+    expect(screen.getByText("支持 PDF / DOCX / TXT，可批量选择")).toBeInTheDocument();
+    expect(screen.queryByText("未选择文件（支持 .pdf / .docx / .txt）")).not.toBeInTheDocument();
+    expect(screen.queryByText("未选择文件（支持批量上传）")).not.toBeInTheDocument();
+    expect(screen.queryByText("结构化解析 · 智能匹配 · 自动出题")).not.toBeInTheDocument();
+    expect(screen.queryByText("每个 JD 会形成一个独立岗位分组")).not.toBeInTheDocument();
+    expect(screen.queryByText("上传后归入当前 JD 岗位分组")).not.toBeInTheDocument();
   });
 
   test("loads persisted resume groups and interview records from the backend", async () => {
@@ -518,6 +579,12 @@ describe("App", () => {
           headers: { "Content-Type": "application/json" }
         });
       }
+      if (url.endsWith("/api/resumes") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       if (url.endsWith("/api/settings/model-providers") && method === "GET") {
         return new Response(JSON.stringify(defaultModelProviders), {
           status: 200,
@@ -531,6 +598,13 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getAllByText("高级 Python 后端工程师").length).toBeGreaterThan(0));
     expect(screen.getAllByText("王五").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "打开源文件 resume-1.txt" })).toHaveAttribute(
+      "href",
+      "/api/runs/run-1/candidates/candidate-1/source-file"
+    );
+
+    await user.click(screen.getByRole("button", { name: "结构化提取" }));
+    expect(document.querySelector(".ranking-list .candidate-main small")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史" }));
     expect(screen.getAllByText("总分 53").length).toBeGreaterThan(0);
@@ -548,6 +622,12 @@ describe("App", () => {
         });
       }
       if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/resumes") && method === "GET") {
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -607,6 +687,12 @@ describe("App", () => {
           headers: { "Content-Type": "application/json" }
         });
       }
+      if (url.endsWith("/api/resumes") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       if (url.endsWith("/api/settings/model-providers") && method === "GET") {
         return new Response(JSON.stringify(defaultModelProviders), {
           status: 200,
@@ -659,6 +745,58 @@ describe("App", () => {
     await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
     expect(screen.getByLabelText("JD 文本兜底")).toBeInTheDocument();
     expect(screen.getByLabelText("简历文本兜底")).toBeInTheDocument();
+  });
+
+  test("clears all resume uploads from resumes workspace", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/runs") && method === "GET") {
+        const calledWithDelete = fetchMock.mock.calls.some(
+          ([request, requestInit]) => String(request).endsWith("/api/runs") && requestInit?.method === "DELETE"
+        );
+        return new Response(JSON.stringify(calledWithDelete ? [] : [demoReport]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/runs") && method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith("/api/interviews") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/resumes") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.endsWith("/api/settings/model-providers") && method === "GET") {
+        return new Response(JSON.stringify(defaultModelProviders), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ detail: "unexpected request" }), { status: 500 });
+    });
+
+    global.fetch = fetchMock as typeof fetch;
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /高级 Python 后端工程师/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清空历史上传" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/runs", expect.objectContaining({ method: "DELETE" }));
+    });
+    expect(await screen.findByText("等待创建岗位分组")).toBeInTheDocument();
   });
 
   test("submits text input and keeps the result overview concise with separate detail views", async () => {
@@ -720,6 +858,7 @@ describe("App", () => {
     expect(screen.queryByText("projects · 第 8 行 · section_rules")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "智能匹配打分" }));
+    expect(screen.queryByText("匹配理由")).not.toBeInTheDocument();
     expect(screen.getByText("评分拆解")).toBeInTheDocument();
     expect(screen.getAllByText("Python").length).toBeGreaterThan(0);
     expect(screen.getByText("强匹配")).toBeInTheDocument();
@@ -733,6 +872,7 @@ describe("App", () => {
     expect(screen.queryByText("中级")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    expect(screen.queryByText("根据 JD 自动匹配面试 skill，配置难度和面试官风格")).not.toBeInTheDocument();
     expect(screen.getByText("面试官风格")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /亲切的 HR/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /严厉的面试主管/ })).toBeInTheDocument();
@@ -1273,7 +1413,11 @@ describe("App", () => {
     await screen.findByText("候选人总览");
     await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
     expect(screen.getByText("面试模式")).toBeInTheDocument();
-    expect(screen.getByText("面试方向")).toBeInTheDocument();
+    expect(screen.getByText("JD 自动路由调试")).toBeInTheDocument();
+    expect((await screen.findAllByText("高级 Python 后端工程师 / Python 后端开发")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Skill")).toBeInTheDocument();
+    expect(screen.queryByText("面试方向")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Java 后端开发" })).not.toBeInTheDocument();
     expect(screen.getByText("难度")).toBeInTheDocument();
     expect(screen.getByText("面试官风格")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "开始 AI 面试" }));
@@ -1299,6 +1443,158 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "面试记录 管理面试历史" }));
     expect(screen.getAllByText("谨慎推进，补充验证关键缺口").length).toBeGreaterThan(0);
+  });
+
+  test("starts a cloud voice interview through backend WebSocket", async () => {
+    let audioResumeCalls = 0;
+    let audioStartCalls = 0;
+    const audioStartTimes: number[] = [];
+
+    class MockAudioContext {
+      state = "suspended";
+      destination = {};
+      currentTime = 10;
+
+      async resume() {
+        audioResumeCalls += 1;
+        this.state = "running";
+      }
+
+      async close() {
+        return undefined;
+      }
+
+      createBuffer(_channels: number, length: number, sampleRate: number) {
+        return {
+          duration: length / sampleRate,
+          getChannelData: () => new Float32Array(length)
+        };
+      }
+
+      createBufferSource() {
+        return {
+          buffer: null,
+          connect: () => undefined,
+          start: (when = 0) => {
+            audioStartCalls += 1;
+            audioStartTimes.push(when);
+          }
+        };
+      }
+    }
+
+    class MockVoiceWebSocket {
+      static instances: MockVoiceWebSocket[] = [];
+      static OPEN = 1;
+      readyState = MockVoiceWebSocket.OPEN;
+      sent: Array<Record<string, unknown>> = [];
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      constructor(public url: string) {
+        MockVoiceWebSocket.instances.push(this);
+        queueMicrotask(() => this.onopen?.(new Event("open")));
+      }
+
+      send(data: string) {
+        this.sent.push(JSON.parse(data));
+      }
+
+      close() {
+        this.readyState = 3;
+      }
+
+      emit(payload: Record<string, unknown>) {
+        this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent);
+      }
+    }
+
+    vi.stubGlobal("WebSocket", MockVoiceWebSocket);
+    vi.stubGlobal("AudioContext", MockAudioContext);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText("职位描述（JD）"), "text");
+    await user.selectOptions(screen.getByLabelText("候选人简历"), "text");
+    await user.type(screen.getByLabelText("JD 文本兜底"), "高级 Python 后端工程师，5年以上经验。");
+    await user.type(screen.getByLabelText("简历文本兜底"), "王五，7年 Python 后端经验。");
+    await user.click(screen.getByRole("button", { name: /开始智能筛选/ }));
+
+    await screen.findByText("候选人总览");
+    await user.click(screen.getByRole("button", { name: "模拟面试 配置面试练习" }));
+    await user.click(screen.getByRole("button", { name: /语音面试/ }));
+    await user.click(screen.getByRole("button", { name: "开始语音面试" }));
+
+    expect(await screen.findByRole("heading", { name: "语音模拟面试" })).toBeInTheDocument();
+    expect(screen.queryByText("王五 · 后端百炼 ASR/TTS 实时语音通道")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".voice-header-primary p")).toHaveLength(0);
+    expect(screen.queryByText("进行中")).not.toBeInTheDocument();
+    expect(document.querySelector(".voice-header-status")).not.toBeInTheDocument();
+    await waitFor(() => expect(MockVoiceWebSocket.instances).toHaveLength(1));
+    const socket = MockVoiceWebSocket.instances[0];
+    expect(socket.url).toBe(`ws://${window.location.host}/ws/voice-interviews/voice-1`);
+
+    act(() => {
+      socket.emit({ type: "control", action: "ready", message: "语音面试通道已连接。" });
+    });
+    expect(screen.queryByText("云端语音通道已连接")).not.toBeInTheDocument();
+    expect(document.querySelector(".voice-stage-subtitle")).not.toBeInTheDocument();
+    expect(screen.queryByText("Voice Session: voice-1")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("你的回答（可编辑）")).not.toHaveAttribute("placeholder");
+    expect(screen.queryByText("答案来源：文本")).not.toBeInTheDocument();
+    expect(screen.queryByText("答案来源：语音")).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("你的回答（可编辑）"), "我做过 RAG 系统，主要用了 FastAPI。");
+    await user.click(screen.getByRole("button", { name: "提交回答" }));
+
+    expect(socket.sent).toContainEqual({
+      type: "control",
+      action: "submit_text",
+      text: "我做过 RAG 系统，主要用了 FastAPI。",
+    });
+
+    act(() => {
+      socket.emit({
+        type: "subtitle",
+        text: "我做过 RAG 系统，主要用了 FastAPI。",
+        isFinal: true,
+      });
+      socket.emit({
+        type: "interview_session",
+        session: interviewSessionAfterTurn,
+      });
+    });
+
+    expect(await screen.findByText("我做过 RAG 系统，主要用了 FastAPI，效果还可以。")).toBeInTheDocument();
+    expect(screen.getByText("语音作答")).toBeInTheDocument();
+
+    act(() => {
+      socket.emit({
+        type: "audio_chunk",
+        data: "AAE=",
+        index: 0,
+        isLast: false,
+      });
+      socket.emit({
+        type: "audio_chunk",
+        data: "AAE=",
+        index: 1,
+        isLast: false,
+      });
+    });
+
+    await waitFor(() => expect(audioResumeCalls).toBe(1));
+    await waitFor(() => expect(audioStartCalls).toBe(2));
+    expect(audioStartTimes[0]).toBe(10);
+    expect(audioStartTimes[1]).toBeGreaterThan(audioStartTimes[0]);
+
+    await user.click(screen.getByRole("button", { name: "重听问题" }));
+    expect(socket.sent).toContainEqual({
+      type: "control",
+      action: "speak_current_question",
+    });
   });
 
   test("shows API errors in the workspace", async () => {

@@ -40,6 +40,29 @@ class QueueLLM:
         return self.payloads.pop(0)
 
 
+def _resume_quality_payload(overall_score: int = 84):
+    return {
+        "overallScore": overall_score,
+        "scoreDetail": {
+            "projectScore": 36,
+            "skillMatchScore": 18,
+            "contentScore": 13,
+            "structureScore": 9,
+            "expressionScore": 8,
+        },
+        "summary": "项目表达较完整，具备可验证成果。",
+        "strengths": ["项目证据较清晰"],
+        "suggestions": [
+            {
+                "category": "内容",
+                "priority": "中",
+                "issue": "部分指标口径仍可补充",
+                "recommendation": "补充统一可复核的结果指标。",
+            }
+        ],
+    }
+
+
 def test_run_pipeline_without_llm_returns_ranked_report_and_export(tmp_path):
     client = make_client(tmp_path)
 
@@ -81,6 +104,136 @@ def test_run_pipeline_without_llm_returns_ranked_report_and_export(tmp_path):
     assert export_response.status_code == 200
     assert export_response.headers["content-type"].startswith("application/json")
     assert json.loads(export_response.content)["run_id"] == report["run_id"]
+
+
+def test_resume_score_endpoint_rejects_empty_input(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post("/api/resume-score")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "未提供简历内容，请上传简历或粘贴简历文本。"
+
+
+def _poll_resume_status(client: object, resume_id: int) -> dict:
+    last_payload = {}
+    for _ in range(60):
+        response = client.get(f"/api/resumes/{resume_id}/detail")
+        assert response.status_code == 200
+        payload = response.json()
+        last_payload = payload
+        if payload["analyze_status"] == "COMPLETED":
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"简历分析未在预期时间内完成: {last_payload}")
+
+
+def test_resume_upload_uploads_and_exports_analysis_chain(tmp_path):
+    client = make_client(tmp_path)
+    files = {
+        "file": (
+            "resume_for_chain.txt",
+            (
+                "李四\n"
+                "5年 Python 后端开发经验，负责电商推荐链路。\n"
+                "项目：将检索链路从 2s 降到 1.2s，支持百万级请求。\n"
+            ),
+            "text/plain",
+        )
+    }
+
+    upload_response = client.post("/api/resumes/upload", files=files)
+    assert upload_response.status_code == 200
+    upload_payload = upload_response.json()
+    assert upload_payload["duplicate"] is False
+    resume_id = upload_payload["resume"]["id"]
+
+    detail_payload = _poll_resume_status(client, resume_id)
+    assert detail_payload["id"] == resume_id
+    assert detail_payload["analyze_status"] == "COMPLETED"
+    assert detail_payload["analyses"], "应至少有一条分析记录"
+
+    export_response = client.get(f"/api/resumes/{resume_id}/export")
+    assert export_response.status_code == 200
+    export_payload = export_response.json()
+    assert export_payload["resume_id"] == resume_id
+    assert export_payload["report"]["overall_score"] == detail_payload["analyses"][0]["overall_score"]
+
+    reanalyze_response = client.post(f"/api/resumes/{resume_id}/reanalyze")
+    assert reanalyze_response.status_code == 200
+    assert reanalyze_response.json()["status"] == "submitted"
+
+    list_payload = client.get("/api/resumes").json()
+    assert list_payload and list_payload[0]["id"] == resume_id
+    assert list_payload[0]["analyze_status"] in {"PENDING", "PROCESSING", "COMPLETED"}
+
+
+def test_resume_upload_duplicate_reuses_existing_analysis_and_increments_access_count(tmp_path):
+    client = make_client(tmp_path)
+    files = {
+        "file": (
+            "resume_for_chain_dup.txt",
+            (
+                "王五\n"
+                "3年 Java 后端开发经验，负责订单系统。\n"
+                "项目：提升下单成功率 15%，优化异步重试策略。\n"
+            ),
+            "text/plain",
+        )
+    }
+
+    first_response = client.post("/api/resumes/upload", files=files)
+    assert first_response.status_code == 200
+    resume_id = first_response.json()["resume"]["id"]
+    _poll_resume_status(client, resume_id)
+
+    list_before = client.get("/api/resumes").json()
+    assert len(list_before) == 1
+    assert list_before[0]["id"] == resume_id
+    assert list_before[0]["access_count"] == 1
+
+    second_response = client.post("/api/resumes/upload", files=files)
+    assert second_response.status_code == 200
+    duplicate_payload = second_response.json()
+    assert duplicate_payload["duplicate"] is True
+    assert duplicate_payload["resume"]["id"] == resume_id
+    assert duplicate_payload["analysis"] is not None
+
+    list_after = client.get("/api/resumes").json()
+    assert len(list_after) == 1
+    assert list_after[0]["access_count"] == 2
+
+
+def test_resume_score_endpoint_scores_single_resume_without_jd(tmp_path):
+    client = make_client(tmp_path)
+    resume_text = (
+        "赵晓\n"
+        "目标：高级后端开发工程师\n"
+        "项目经历\n"
+        "• 基于 FastAPI 与 Redis 重构风控服务，响应时延从 1.8s 降至 0.7s。\n"
+        "• 使用 Kafka 落地异步任务链路，支持 20w QPS 峰值压测。\n"
+        "技能\n"
+        "Python, FastAPI, SQL, Redis, Kafka"
+    )
+
+    response = client.post(
+        "/api/resume-score",
+        data={
+            "resume_text": resume_text
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overall_score"] >= 0
+    assert "score_detail" in payload
+    assert payload["score_detail"]["project_score"] > 0
+    assert payload["score_detail"]["skill_match_score"] > 0
+    assert payload["score_detail"]["content_score"] > 0
+    assert payload["original_text"] == resume_text
+    assert "summary" in payload
+    assert "strengths" in payload and isinstance(payload["strengths"], list)
+    assert "suggestions" in payload and isinstance(payload["suggestions"], list)
 
 
 def test_create_run_persists_report_once(tmp_path, monkeypatch):
@@ -250,6 +403,202 @@ def test_run_and_interview_records_are_listed_and_deletable(tmp_path):
 
     assert delete_response.status_code == 204
     assert client.get(f"/api/interviews/{session['session_id']}").status_code == 404
+    assert client.get("/api/interviews").json() == []
+
+
+def test_skill_route_endpoint_uses_existing_jd_group_for_interview_skill(tmp_path):
+    client = make_client(tmp_path)
+    jd_text = (
+        "职位二：AI 业务探索\n"
+        "核心使命：深入业务，用 AI（Prompt/Agent/工作流）识别并重塑重复性工作。\n"
+        "工作内容：快速搭建 AI Agent 或自动化脚本，验证 AI 能干到什么程度。\n"
+        "任职要求：有搭建 Agent 或编写复杂 Prompt 的实战经验，能与业务和技术同频对话。"
+    )
+
+    run_response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": jd_text,
+            "resume_texts": "小黄\n做过 AI Agent 原型和 Prompt 工作流自动化。",
+        },
+    )
+    assert run_response.status_code == 200
+    run_report = run_response.json()
+
+    route_response = client.get(f"/api/runs/{run_report['run_id']}/skill-route")
+
+    assert route_response.status_code == 200
+    route = route_response.json()
+    assert route["position_name"] == "AI 业务探索"
+    assert route["skill_id"] == "ai-agent-dev"
+    assert route["skill_name"] == "AI Agent 开发"
+    assert route["route_result"] == "AI 业务探索 / AI Agent 开发"
+    assert route["confidence"] > 0
+    assert route["reason"]
+
+    start_response = client.post(
+        f"/api/runs/{run_report['run_id']}/interviews",
+        json={
+            "candidate_id": run_report["candidates"][0]["candidate_id"],
+            "mode": "text::mid:friendly_hr",
+            "skill_id": route["skill_id"],
+        },
+    )
+
+    assert start_response.status_code == 200
+    session = start_response.json()
+    assert session["direction"] == "AI Agent 开发"
+    assert session["skill_id"] == "ai-agent-dev"
+    assert session["current_question"]["skill_id"] == "ai-agent-dev"
+
+
+def test_runs_with_same_jd_are_merged_into_one_group(tmp_path):
+    client = make_client(tmp_path)
+
+    first = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 和 SQL。",
+            "resume_texts": ["王五\n5年 Python 后端经验，做过 FastAPI 服务。"],
+        },
+    )
+    assert first.status_code == 200
+    first_report = first.json()
+
+    second = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 和 SQL。",
+            "resume_texts": ["赵六\n3年 Python 后端经验。"],
+        },
+    )
+    assert second.status_code == 200
+    second_report = second.json()
+    assert second_report["run_id"] == first_report["run_id"]
+
+    runs_payload = client.get("/api/runs").json()
+    assert len(runs_payload) == 1
+    merged = runs_payload[0]
+    assert merged["run_id"] == first_report["run_id"]
+    candidate_ids = {candidate["candidate_id"] for candidate in merged["candidates"]}
+    assert candidate_ids == {"candidate-1", "candidate-2"}
+
+
+def test_delete_single_resume_from_run(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 和 SQL。",
+            "resume_texts": [
+                "王五\n5年 Python 后端经验，做过 FastAPI 服务。",
+                "赵六\n3年 Python 后端经验，参与过系统迭代。",
+            ],
+        },
+    )
+    assert response.status_code == 200
+    report = response.json()
+    run_id = report["run_id"]
+    victim_id = report["candidates"][0]["candidate_id"]
+
+    delete_response = client.delete(f"/api/runs/{run_id}/candidates/{victim_id}")
+    assert delete_response.status_code == 200
+    updated = delete_response.json()
+    assert updated["run_id"] == run_id
+    assert victim_id not in {item["candidate_id"] for item in updated["candidates"]}
+    assert len(updated["candidates"]) == 1
+
+    runs_payload = client.get("/api/runs").json()
+    assert len(runs_payload) == 1
+    assert runs_payload[0]["run_id"] == run_id
+    assert victim_id not in {item["candidate_id"] for item in runs_payload[0]["candidates"]}
+
+
+def test_delete_last_resume_removes_run_and_interview_history(tmp_path):
+    client = make_client(tmp_path)
+
+    create_response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 和 SQL。",
+            "resume_texts": [
+                "王五\n5年 Python 后端经验，做过 FastAPI 服务。",
+            ],
+        },
+    )
+    assert create_response.status_code == 200
+    report = create_response.json()
+    run_id = report["run_id"]
+    candidate_id = report["candidates"][0]["candidate_id"]
+
+    session_response = client.post(
+        f"/api/runs/{run_id}/interviews",
+        json={"candidate_id": candidate_id, "mode": "text:Python 后端开发:mid:friendly_hr"},
+    )
+    assert session_response.status_code == 200
+    assert client.get("/api/interviews").json() != []
+
+    delete_response = client.delete(f"/api/runs/{run_id}/candidates/{candidate_id}")
+    assert delete_response.status_code == 204
+
+    assert client.get("/api/runs").json() == []
+    assert client.get("/api/interviews").json() == []
+
+
+def test_delete_all_runs_clears_runs_and_interviews(tmp_path):
+    client = make_client(tmp_path)
+
+    first = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "Python 后端工程师，负责 FastAPI 和 SQL。",
+            "resume_texts": ["王五\n5年 Python 后端经验，做过 FastAPI 服务。"],
+        },
+    )
+    assert first.status_code == 200
+    first_report = first.json()
+
+    second = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "产品运营岗位，负责增长与留存。",
+            "resume_texts": ["赵六\n3年运营经验，负责增长策略优化。"],
+        },
+    )
+    assert second.status_code == 200
+    second_report = second.json()
+
+    first_session = client.post(
+        f"/api/runs/{first_report['run_id']}/interviews",
+        json={"candidate_id": first_report['candidates'][0]['candidate_id']},
+    )
+    assert first_session.status_code == 200
+
+    second_session = client.post(
+        f"/api/runs/{second_report['run_id']}/interviews",
+        json={"candidate_id": second_report['candidates'][0]['candidate_id']},
+    )
+    assert second_session.status_code == 200
+
+    assert len(client.get("/api/interviews").json()) == 2
+
+    delete_response = client.delete("/api/runs")
+    assert delete_response.status_code == 204
+    assert client.get("/api/runs").json() == []
+    assert client.get("/api/interviews").json() == []
+
+
+def test_delete_all_runs_is_idempotent(tmp_path):
+    client = make_client(tmp_path)
+
+    first = client.delete("/api/runs")
+    assert first.status_code == 204
+
+    second = client.delete("/api/runs")
+    assert second.status_code == 204
+
+    assert client.get("/api/runs").json() == []
     assert client.get("/api/interviews").json() == []
 
 
@@ -670,6 +1019,7 @@ Midjourney | Runway
                     },
                 ],
             },
+            _resume_quality_payload(),
             {
                 "rubric": [
                     {
@@ -754,6 +1104,8 @@ Midjourney | Runway
     report = pipeline.run(jd_text, [("小林.txt", resume_text)])
 
     candidate = report.candidates[0]
+    assert candidate.resume_quality is not None
+    assert candidate.resume_quality.overall_score == 84
     assert candidate.match_report.total_score == 42
     assert candidate.match_report.dimension_scores["AIGC工具生态"] == 26
     assert any(
@@ -832,6 +1184,7 @@ def test_pipeline_logs_and_audits_llm_matching_fallback(tmp_path, caplog, monkey
                     }
                 ],
             },
+            _resume_quality_payload(),
             {
                 "rubric": [
                     {
@@ -1184,17 +1537,29 @@ Java/Go 后端开发、Spring Boot/Django 框架、MySQL/PostgreSQL 数据库、
 def test_run_pipeline_accepts_jd_text_with_resume_file_only(tmp_path):
     client = make_client(tmp_path)
     resume_path = Path("samples/resumes/小黄_深度实战版_.pdf")
+    source_bytes = resume_path.read_bytes()
 
-    with resume_path.open("rb") as resume_file:
-        response = client.post(
-            "/api/runs",
-            data={
-                "jd_text": "海外内容运营，熟悉 TikTok Shop、AI 视频营销、跨境电商和数据分析。",
-            },
-            files={"resume_files": (resume_path.name, resume_file, "application/pdf")},
-        )
+    response = client.post(
+        "/api/runs",
+        data={
+            "jd_text": "海外内容运营，熟悉 TikTok Shop、AI 视频营销、跨境电商和数据分析。",
+        },
+        files={"resume_files": (resume_path.name, source_bytes, "application/pdf")},
+    )
 
     assert response.status_code == 200
-    candidate = response.json()["candidates"][0]
+    report = response.json()
+    candidate = report["candidates"][0]
     assert candidate["profile"]["name"] == "小黄"
     assert candidate["source_name"] == resume_path.name
+    assert candidate["source_file"] == {
+        "filename": resume_path.name,
+        "content_type": "application/pdf",
+    }
+
+    source_response = client.get(
+        f"/api/runs/{report['run_id']}/candidates/{candidate['candidate_id']}/source-file"
+    )
+    assert source_response.status_code == 200
+    assert source_response.content == source_bytes
+    assert source_response.headers["content-type"].startswith("application/pdf")

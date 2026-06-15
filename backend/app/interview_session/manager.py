@@ -8,6 +8,7 @@ from app.schemas import (
     AgentSkill,
     AgentSkillCategory,
     CandidateReport,
+    InterviewTurnInputMetadata,
     InterviewFinalReport,
     InterviewQuestion,
     InterviewSession,
@@ -35,17 +36,19 @@ def create_interview_session(
     candidate: CandidateReport,
     mode: str = "structured",
     skill_repository: Optional[SkillRepository] = None,
+    skill_id: Optional[str] = None,
 ) -> InterviewSession:
     now = datetime.utcnow()
     normalized_mode = (mode or "structured").strip() or "structured"
     mode_spec = _parse_interview_mode(normalized_mode)
-    skill = _resolve_skill(mode_spec.direction, run, skill_repository)
+    skill = _resolve_skill(mode_spec.direction, run, skill_repository, skill_id)
+    direction = skill.name if skill is not None and skill_id else mode_spec.direction
     return InterviewSession(
         session_id=uuid4().hex,
         run_id=run.run_id,
         candidate_id=candidate.candidate_id,
         mode=normalized_mode,
-        direction=mode_spec.direction,
+        direction=direction,
         difficulty=mode_spec.difficulty,
         interviewer_style=mode_spec.interviewer_style,
         skill_id=skill.id if skill is not None else None,
@@ -64,6 +67,7 @@ def submit_interview_turn(
     candidate: CandidateReport,
     session: InterviewSession,
     candidate_answer: str,
+    candidate_answer_metadata: Optional[InterviewTurnInputMetadata] = None,
     skill_repository: Optional[SkillRepository] = None,
 ) -> InterviewSession:
     answer = (candidate_answer or "").strip()
@@ -82,11 +86,14 @@ def submit_interview_turn(
         _as_interview_question(current_question),
         current_question.question_index,
         answer,
+        conversation_turns=session.turns,
     )
     turn = InterviewTurn(
         turn_index=len(session.turns) + 1,
         question=current_question,
         answer=answer,
+        answer_source=(candidate_answer_metadata.source if candidate_answer_metadata else None),
+        answer_metadata=candidate_answer_metadata,
         diagnosis=diagnosis,
     )
     session.turns.append(turn)
@@ -209,9 +216,14 @@ def _resolve_skill(
     direction: str,
     run: RunReport,
     repository: Optional[SkillRepository],
+    skill_id: Optional[str] = None,
 ) -> Optional[AgentSkill]:
     if repository is None:
         return None
+    if skill_id:
+        skill = repository.get_optional(skill_id)
+        if skill is not None:
+            return skill
     return select_skill_for_direction(direction, repository, run.jd_profile)
 
 

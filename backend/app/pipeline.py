@@ -1,5 +1,7 @@
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+from pathlib import Path
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
@@ -22,8 +24,8 @@ from app.llm_client import LLMClient
 from app.policies import QUESTION_MATERIAL_MIN_SCORE
 from app.privacy import mask_pii, restore_pii_in_data
 from app.question_generation import generate_interview_questions
-from app.schemas import CandidateProfile, CandidateReport, ExtractedFact, JDProfile, RunMetadata, RunReport
-from app.scoring import score_candidate, score_candidate_with_llm
+from app.schemas import CandidateProfile, CandidateReport, CandidateSourceFile, ExtractedFact, JDProfile, RunMetadata, RunReport
+from app.scoring import score_candidate, score_candidate_with_llm, score_resume_quality
 from app.skills import SkillRepository, select_skills_for_jd
 from app.storage import RunStorage
 from app.vector_store import VectorStore
@@ -31,10 +33,19 @@ from app.vector_store import VectorStore
 PROMPT_VERSIONS = {
     "jd_extraction": "jd_requirements@2026-06-13",
     "resume_extraction": "resume_profile@2026-06-13",
+    "resume_quality": "resume_quality@2026-06-14",
     "rubric_generation": "rubric_generation@2026-06-14",
     "requirement_matching": "requirement_matching@2026-06-14",
 }
 SCORING_POLICY_VERSION = "backend_score_policy@v1"
+
+
+@dataclass(frozen=True)
+class ResumeSource:
+    source_name: str
+    text: str
+    file_content: Optional[bytes] = None
+    content_type: Optional[str] = None
 
 
 class RecruitingPipeline:
@@ -48,46 +59,82 @@ class RecruitingPipeline:
     def run(
         self,
         jd_text: str,
-        resumes: List[Tuple[str, str]],
+        resumes: List[ResumeSource],
         initial_warnings: Optional[List[str]] = None,
+        existing_run: Optional[RunReport] = None,
     ) -> RunReport:
-        run_id = uuid4().hex
-        warnings: List[str] = list(initial_warnings or [])
-        audit_events = []
+        run_id = existing_run.run_id if existing_run is not None else uuid4().hex
+        request_warnings = list(initial_warnings or [])
         tool_recorder = ToolRecorder(run_id)
-        metadata = RunMetadata(
-            jd_text_hash=_sha256_text(jd_text),
-            llm_model=self.settings.llm_model,
-            prompt_versions=PROMPT_VERSIONS,
-            scoring_policy_version=SCORING_POLICY_VERSION,
-        )
-        with tool_recorder.call(
-            "extract_jd",
-            "extract_jd",
-            input_summary=_summarize_text(jd_text),
-            metadata={"llm_available": self.llm.available},
-        ) as tool_call:
-            jd_profile, jd_extraction_facts = self._extract_jd(jd_text, warnings)
-            tool_call.set_output_summary(
-                f"{jd_profile.job_title}; facts={len(jd_extraction_facts)}"
-            )
-        selected_skills = select_skills_for_jd(jd_profile, self.skill_repository)
-        agent_plan = build_recruiting_agent_plan(jd_profile, selected_skills)
-        agent_state = create_agent_state(agent_plan)
-        complete_step(
-            agent_state,
-            "extract_jd",
-            current_step_id="extract_resumes",
-            tool_call_ids=[tool_call.call_id],
-        )
-        query_text = " ".join(
-            jd_profile.required_skills + jd_profile.responsibilities + [jd_profile.job_title]
-        )
-        candidates: List[CandidateReport] = []
 
-        self.vector_store.add_document(run_id, "jd", "JD", jd_text)
-        for index, (source_name, resume_text) in enumerate(resumes):
-            candidate_id = f"candidate-{index + 1}"
+        if existing_run is None:
+            warnings: List[str] = request_warnings
+            audit_events: List[dict] = []
+            metadata = RunMetadata(
+                jd_text_hash=_sha256_text(jd_text),
+                llm_model=self.settings.llm_model,
+                prompt_versions=PROMPT_VERSIONS,
+                scoring_policy_version=SCORING_POLICY_VERSION,
+            )
+            with tool_recorder.call(
+                "extract_jd",
+                "extract_jd",
+                input_summary=_summarize_text(jd_text),
+                metadata={"llm_available": self.llm.available},
+            ) as tool_call:
+                jd_profile, jd_extraction_facts = self._extract_jd(jd_text, warnings)
+                tool_call.set_output_summary(
+                    f"{jd_profile.job_title}; facts={len(jd_extraction_facts)}"
+                )
+            selected_skills = select_skills_for_jd(jd_profile, self.skill_repository)
+            agent_plan = build_recruiting_agent_plan(jd_profile, selected_skills)
+            agent_state = create_agent_state(agent_plan)
+            complete_step(
+                agent_state,
+                "extract_jd",
+                current_step_id="extract_resumes",
+                tool_call_ids=[tool_call.call_id],
+            )
+            query_text = " ".join(
+                jd_profile.required_skills + jd_profile.responsibilities + [jd_profile.job_title]
+            )
+            candidates: List[CandidateReport] = []
+            base_tool_calls: List[object] = []
+            start_candidate_index = 1
+            self.vector_store.add_document(run_id, "jd", "JD", jd_text)
+        else:
+            warnings = list(existing_run.warnings)
+            warnings.extend(request_warnings)
+            metadata = existing_run.metadata.model_copy(deep=True)
+            metadata.jd_text_hash = _sha256_text(jd_text)
+            metadata.llm_model = self.settings.llm_model
+            metadata.prompt_versions = PROMPT_VERSIONS
+            metadata.scoring_policy_version = SCORING_POLICY_VERSION
+            audit_events = list(existing_run.audit_events)
+
+            jd_profile = existing_run.jd_profile
+            jd_extraction_facts = list(existing_run.jd_extraction_facts)
+            query_text = " ".join(
+                jd_profile.required_skills + jd_profile.responsibilities + [jd_profile.job_title]
+            )
+            selected_skills = select_skills_for_jd(jd_profile, self.skill_repository)
+            agent_plan = existing_run.agent_plan
+            if agent_plan is None:
+                agent_plan = build_recruiting_agent_plan(jd_profile, selected_skills)
+            agent_state = existing_run.agent_state
+            if agent_state is None:
+                agent_state = create_agent_state(agent_plan)
+                complete_state(agent_state)
+            candidates = list(existing_run.candidates)
+            base_tool_calls = list(existing_run.tool_calls)
+            start_candidate_index = _next_candidate_index(candidates)
+
+        new_candidates: List[CandidateReport] = []
+        for index, raw_resume in enumerate(resumes):
+            resume = _coerce_resume_source(raw_resume)
+            source_name = resume.source_name
+            resume_text = resume.text
+            candidate_id = f"candidate-{start_candidate_index + index}"
             with tool_recorder.call(
                 "extract_resume",
                 "extract_resumes",
@@ -97,12 +144,15 @@ class RecruitingPipeline:
             ) as tool_call:
                 profile, extraction_facts = self._extract_candidate(resume_text, source_name, warnings)
                 tool_call.set_output_summary(f"{profile.name}; facts={len(extraction_facts)}")
-            complete_step(
-                agent_state,
-                "extract_resumes",
-                current_step_id="retrieve_evidence",
-                tool_call_ids=[tool_call.call_id],
-            )
+
+            if existing_run is None:
+                complete_step(
+                    agent_state,
+                    "extract_resumes",
+                    current_step_id="retrieve_evidence",
+                    tool_call_ids=[tool_call.call_id],
+                )
+
             self.vector_store.add_document(run_id, candidate_id, source_name, resume_text)
             with tool_recorder.call(
                 "retrieve_evidence",
@@ -118,12 +168,32 @@ class RecruitingPipeline:
                     limit=5,
                 )
                 tool_call.set_output_summary(f"snippets={len(evidence_texts)}")
-            complete_step(
-                agent_state,
-                "retrieve_evidence",
-                current_step_id="score_candidates",
-                tool_call_ids=[tool_call.call_id],
-            )
+
+            with tool_recorder.call(
+                "score_resume_quality",
+                "score_candidates",
+                candidate_id=candidate_id,
+                input_summary=f"{profile.name} 简历质量",
+                metadata={"llm_available": self.llm.available},
+            ) as tool_call:
+                resume_quality_report = score_resume_quality(
+                    self.llm,
+                    resume_text,
+                    profile,
+                    extraction_facts,
+                )
+                tool_call.set_output_summary(
+                    f"overall={resume_quality_report.overall_score}"
+                )
+
+            if existing_run is None:
+                complete_step(
+                    agent_state,
+                    "retrieve_evidence",
+                    current_step_id="score_candidates",
+                    tool_call_ids=[tool_call.call_id],
+                )
+
             scoring_failures = []
             with tool_recorder.call(
                 "score_candidate",
@@ -150,12 +220,15 @@ class RecruitingPipeline:
                     )
                     match = score_candidate(jd_profile, profile, evidence_texts, extraction_facts)
                 tool_call.set_output_summary(f"score={match.total_score}; decision={match.decision}")
-            complete_step(
-                agent_state,
-                "score_candidates",
-                current_step_id="generate_interview_materials",
-                tool_call_ids=[tool_call.call_id],
-            )
+
+            if existing_run is None:
+                complete_step(
+                    agent_state,
+                    "score_candidates",
+                    current_step_id="generate_interview_materials",
+                    tool_call_ids=[tool_call.call_id],
+                )
+
             if match.total_score >= QUESTION_MATERIAL_MIN_SCORE:
                 question_resume_text = mask_pii(resume_text, candidate_name=profile.name).text
                 with tool_recorder.call(
@@ -181,25 +254,35 @@ class RecruitingPipeline:
                     tool_call.set_output_summary(
                         f"questions={len(match.interview_questions)}; followups={len(match.followup_questions)}"
                     )
+
+            if existing_run is None:
                 complete_step(
                     agent_state,
                     "generate_interview_materials",
                     current_step_id="run_interview_session",
                     tool_call_ids=[tool_call.call_id],
                 )
-            candidates.append(
+
+            new_candidates.append(
                 CandidateReport(
                     candidate_id=candidate_id,
                     source_name=source_name,
+                    source_file=self._store_candidate_source_file(run_id, candidate_id, resume),
                     profile=profile,
                     match_report=match,
+                    resume_quality=resume_quality_report,
                     resume_text_hash=_sha256_text(resume_text),
                     extraction_facts=extraction_facts,
                 )
             )
 
+        if existing_run is None:
+            complete_state(agent_state)
+
+        candidates = [*candidates, *new_candidates]
         candidates.sort(key=lambda item: item.match_report.total_score, reverse=True)
-        complete_state(agent_state)
+        all_tool_calls = [*base_tool_calls, *tool_recorder.records]
+
         report = RunReport(
             run_id=run_id,
             created_at=datetime.utcnow(),
@@ -211,13 +294,65 @@ class RecruitingPipeline:
             audit_events=audit_events,
             agent_plan=agent_plan,
             agent_state=agent_state,
-            tool_calls=tool_recorder.records,
+            tool_calls=all_tool_calls,
         )
         self.storage.save_run(report)
         return report
 
+    def get_candidate_source_file_path(
+        self, run_id: str, candidate_id: str, source_file: CandidateSourceFile
+    ) -> Optional[Path]:
+        file_path = self._candidate_source_file_path(run_id, candidate_id, source_file.filename)
+        if not file_path.is_file():
+            return None
+        return file_path
+
+    def get_latest_run_for_jd(self, jd_text: str) -> Optional[RunReport]:
+        return self.storage.get_latest_run_by_jd_text_hash(_sha256_text(jd_text))
+
     def get_run(self, run_id: str) -> RunReport:
         return self.storage.get_run(run_id)
+
+    def remove_candidate(self, run_id: str, candidate_id: str) -> Optional[RunReport]:
+        report = self.storage.get_run(run_id)
+        if report is None:
+            return None
+        remaining = [item for item in report.candidates if item.candidate_id != candidate_id]
+        if len(remaining) == len(report.candidates):
+            return report
+
+        if not remaining:
+            for session in self.storage.list_interview_sessions(run_id=run_id):
+                if session.candidate_id == candidate_id:
+                    self.storage.delete_interview_session(session.session_id)
+            self.storage.delete_run(run_id)
+            return None
+
+        report.candidates = remaining
+        report.created_at = datetime.utcnow()
+        for session in self.storage.list_interview_sessions(run_id=run_id):
+            if session.candidate_id == candidate_id:
+                self.storage.delete_interview_session(session.session_id)
+        self.storage.save_run(report)
+        return report
+
+    def remove_all_runs(self) -> None:
+        self.storage.delete_all_interview_sessions()
+        self.storage.delete_all_runs()
+
+    def _store_candidate_source_file(
+        self, run_id: str, candidate_id: str, resume: ResumeSource
+    ) -> Optional[CandidateSourceFile]:
+        if not resume.file_content:
+            return None
+        file_path = self._candidate_source_file_path(run_id, candidate_id, resume.source_name)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(resume.file_content)
+        return CandidateSourceFile(filename=resume.source_name, content_type=resume.content_type)
+
+    def _candidate_source_file_path(self, run_id: str, candidate_id: str, filename: str) -> Path:
+        safe_name = _safe_source_filename(filename)
+        return Path(self.settings.data_dir) / "run_uploads" / run_id / candidate_id / safe_name
 
     def _extract_jd(self, text: str, warnings: List[str]) -> Tuple[JDProfile, List[ExtractedFact]]:
         if self.llm.available:
@@ -336,8 +471,33 @@ def _merge_extraction_facts(
     return merged
 
 
+def _next_candidate_index(candidates: List[CandidateReport]) -> int:
+    max_index = 0
+    for candidate in candidates:
+        parts = candidate.candidate_id.split("-", 1)
+        if len(parts) != 2 or parts[0] != "candidate":
+            continue
+        try:
+            max_index = max(max_index, int(parts[1]))
+        except ValueError:
+            continue
+    return max_index + 1
+
+
+def _coerce_resume_source(resume) -> ResumeSource:
+    if isinstance(resume, ResumeSource):
+        return resume
+    source_name, text = resume
+    return ResumeSource(str(source_name), str(text))
+
+
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _safe_source_filename(filename: str) -> str:
+    name = Path(filename or "resume").name.replace("\\", "_").strip()
+    return name or "resume"
 
 
 def _summarize_text(text: str, max_length: int = 120) -> str:

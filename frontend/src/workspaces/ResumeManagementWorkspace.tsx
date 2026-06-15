@@ -9,7 +9,7 @@ import {
   Loader2,
   Paperclip,
   Search,
-  Upload
+  Trash2
 } from "lucide-react";
 import { ChangeEvent, FormEvent, type ReactNode } from "react";
 
@@ -20,10 +20,9 @@ import {
   factDisplayLabel,
   formatScore,
   groupResumeFacts,
-  visibleDisplayItems,
   type FactGroup
 } from "../factDisplay";
-import { candidateSummary, hasQuestionMaterials } from "../matchReportDisplay";
+import { hasQuestionMaterials } from "../matchReportDisplay";
 import type {
   CandidateProfile,
   CandidateReport,
@@ -40,6 +39,10 @@ const DETAIL_VIEWS: Array<{ id: ResultView; label: string }> = [
   { id: "matching", label: "智能匹配打分" },
   { id: "questions", label: "试题生成" }
 ];
+
+function candidateSourceFileUrl(runId: string, candidateId: string) {
+  return `/api/runs/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}/source-file`;
+}
 
 export function ResumeManagementWorkspace({
   activeView,
@@ -64,6 +67,8 @@ export function ResumeManagementWorkspace({
   onResumeTextChange,
   onSelectCandidate,
   onSelectRun,
+  onDeleteCandidate,
+  onDeleteAllRuns,
   onSubmit
 }: {
   activeView: ResultView;
@@ -88,6 +93,8 @@ export function ResumeManagementWorkspace({
   onResumeTextChange: (value: string) => void;
   onSelectCandidate: (id: string) => void;
   onSelectRun: (id: string) => void;
+  onDeleteCandidate: (runId: string, candidateId: string) => void;
+  onDeleteAllRuns: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
@@ -95,13 +102,6 @@ export function ResumeManagementWorkspace({
       <PageTitle
         icon={FileStack}
         title="简历管理"
-        subtitle="按岗位 JD 分组管理简历与分析结果"
-        action={
-          <button className="top-action" type="button" onClick={() => document.getElementById("resume-files")?.click()}>
-            <Upload size={18} aria-hidden="true" />
-            <span>上传简历</span>
-          </button>
-        }
       />
 
       <section className="card form-card workspace-card">
@@ -109,7 +109,6 @@ export function ResumeManagementWorkspace({
           <div className="form-grid">
             <FieldGroup
               label="职位描述（JD）"
-              hint="每个 JD 会形成一个独立岗位分组"
               mode={jdInputMode}
               onModeChange={onJdInputModeChange}
               modeId="jd-mode"
@@ -120,7 +119,7 @@ export function ResumeManagementWorkspace({
                   accept=".pdf,.docx,.txt"
                   onChange={(event) => onJdFileChange(event.target.files?.[0] ?? null)}
                   label="选择 JD 文件"
-                  summary={jdFile ? jdFile.name : "未选择文件（支持 .pdf / .docx / .txt）"}
+                  summary={jdFile ? jdFile.name : "支持 PDF / DOCX / TXT"}
                 />
               ) : (
                 <textarea
@@ -136,7 +135,6 @@ export function ResumeManagementWorkspace({
 
             <FieldGroup
               label="候选人简历"
-              hint="上传后归入当前 JD 岗位分组"
               mode={resumeInputMode}
               onModeChange={onResumeInputModeChange}
               modeId="resume-mode"
@@ -148,7 +146,7 @@ export function ResumeManagementWorkspace({
                   multiple
                   onChange={onResumeFilesChange}
                   label="选择简历文件"
-                  summary={resumeFiles.length ? `已选择 ${resumeFiles.length} 份文件` : "未选择文件（支持批量上传）"}
+                  summary={resumeFiles.length ? `已选择 ${resumeFiles.length} 份文件` : "支持 PDF / DOCX / TXT，可批量选择"}
                 />
               ) : (
                 <textarea
@@ -171,7 +169,6 @@ export function ResumeManagementWorkspace({
           ) : null}
 
           <div className="form-footer">
-            <p className="form-footer-hint">结构化解析 · 智能匹配 · 自动出题</p>
             <button className="primary-button" type="submit" disabled={loading}>
               {loading ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <ArrowUpRight size={16} aria-hidden="true" />}
               <span>{loading ? "分析中" : "开始智能筛选"}</span>
@@ -186,7 +183,23 @@ export function ResumeManagementWorkspace({
             <Search size={20} aria-hidden="true" />
             <input aria-label="搜索简历" placeholder="搜索简历..." />
           </div>
-          <span>{runs.length} 个岗位分组</span>
+          <div className="toolbar-actions">
+            <span>{runs.length} 个岗位分组</span>
+            <button
+              className="top-action top-action-danger"
+              type="button"
+              onClick={() => {
+                if (runs.length === 0) {
+                  return;
+                }
+                onDeleteAllRuns();
+              }}
+              disabled={runs.length === 0}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              <span>清空历史上传</span>
+            </button>
+          </div>
         </div>
         {runs.length ? (
           <div className="job-group-list">
@@ -204,22 +217,55 @@ export function ResumeManagementWorkspace({
                 </button>
                 <div className="job-candidate-table">
                   {item.candidates.map((candidate) => (
-                    <button
+                    <div
                       key={`${item.run_id}-${candidate.candidate_id}`}
-                      type="button"
+                      className="job-candidate-row"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         onSelectRun(item.run_id);
                         onSelectCandidate(candidate.candidate_id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectRun(item.run_id);
+                          onSelectCandidate(candidate.candidate_id);
+                        }
                       }}
                     >
                       <span className="document-icon"><FileText size={20} aria-hidden="true" /></span>
                       <span className="candidate-cell">
                         <strong>{candidate.profile.name}</strong>
-                        <small>{candidate.source_name}</small>
+                        {candidate.source_file ? (
+                          <a
+                            className="candidate-source-link"
+                            href={candidateSourceFileUrl(item.run_id, candidate.candidate_id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`打开源文件 ${candidate.source_file.filename}`}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {candidate.source_name}
+                          </a>
+                        ) : (
+                          <small>{candidate.source_name}</small>
+                        )}
                       </span>
                       <span className="status-ok"><CheckCircle2 size={18} aria-hidden="true" /> 分析完成</span>
                       <span className="score-cell">{candidate.match_report.total_score}</span>
-                    </button>
+                      <button
+                        className="icon-button candidate-delete-button"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteCandidate(item.run_id, candidate.candidate_id);
+                        }}
+                        aria-label="删除这份简历历史"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </article>
@@ -272,7 +318,7 @@ function FieldGroup({
   children
 }: {
   label: string;
-  hint: string;
+  hint?: string;
   mode: InputMode;
   onModeChange: (mode: InputMode) => void;
   modeId: string;
@@ -285,7 +331,7 @@ function FieldGroup({
           <label className="field-label" htmlFor={modeId}>
             {label}
           </label>
-          <p className="field-hint">{hint}</p>
+          {hint ? <p className="field-hint">{hint}</p> : null}
         </div>
         <div className="mode-select">
           <select
@@ -333,7 +379,6 @@ function FilePicker({
         type="file"
       />
       <span className="file-picker-summary">
-        <FileText size={14} aria-hidden="true" />
         <span>{summary}</span>
       </span>
     </div>
@@ -400,7 +445,6 @@ function CandidateRanking({
           <span className="rank-number">{String(index + 1).padStart(2, "0")}</span>
           <span className="candidate-main">
             <strong>{candidate.profile.name}</strong>
-            <small>{candidateSummary(candidate.match_report)}</small>
           </span>
           <span className="score">{candidate.match_report.total_score}</span>
         </button>
@@ -478,10 +522,6 @@ function CandidateDetail({
 
       {view === "matching" ? (
         <>
-          <section className="detail-section">
-            <h3>匹配理由</h3>
-            <List items={visibleDisplayItems(report.match_reasons)} />
-          </section>
           <section className="detail-section">
             <h3>评分拆解</h3>
             <ScoreExplanation

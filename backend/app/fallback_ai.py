@@ -80,8 +80,14 @@ def extract_candidate_profile(text: str, source_name: str = "简历") -> Candida
 
 
 def _clean_title(text: str) -> str:
-    title = re.split(r"[，,。；;:：]", text)[0].strip()
-    title = re.sub(r"^(岗位|职位|招聘)[:：\s]*", "", title)
+    text = text.strip()
+    explicit = re.match(
+        r"^(?:岗位名称|职位名称|招聘岗位|招聘职位|岗位|职位|招聘)(?:[一二三四五六七八九十\d]+)?[:：\s]+(.+)$",
+        text,
+    )
+    title_source = explicit.group(1) if explicit else text
+    title = re.split(r"[，,。；;:：]", title_source)[0].strip()
+    title = re.sub(r"^(岗位名称|职位名称|招聘岗位|招聘职位|岗位|职位|招聘)[:：\s]*", "", title)
     return title[:40] or "未命名岗位"
 
 
@@ -136,4 +142,3 @@ def _ambiguous_points(text: str, projects: List[str], work: List[str]) -> List[s
     if not projects:
         points.append("缺少可深挖的项目经历描述")
     return unique_preserve_order(points)[:5]
-

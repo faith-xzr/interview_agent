@@ -9,6 +9,16 @@ export interface JDProfile {
   hard_requirements: string[];
 }
 
+export interface SkillRouteResult {
+  position_name: string;
+  skill_id: string;
+  skill_name: string;
+  route_result: string;
+  confidence: number;
+  reason: string;
+  source: string;
+}
+
 export interface CandidateProfile {
   name: string;
   target_role?: string | null;
@@ -101,6 +111,15 @@ export interface InterviewAnswerFollowUp {
   source: string;
 }
 
+export interface InterviewTurnInputMetadata {
+  source: "text" | "speech";
+  transcript?: string | null;
+  confidence?: number | null;
+  locale?: string | null;
+  finalized?: boolean;
+  raw_text?: string | null;
+}
+
 export interface InterviewSessionQuestion {
   question: string;
   focus: string;
@@ -115,6 +134,8 @@ export interface InterviewTurn {
   turn_index: number;
   question: InterviewSessionQuestion;
   answer: string;
+  answer_source?: string | null;
+  answer_metadata?: InterviewTurnInputMetadata | null;
   diagnosis: InterviewAnswerFollowUp;
   created_at: string;
 }
@@ -150,6 +171,46 @@ export interface InterviewSession {
   final_report?: InterviewFinalReport | null;
 }
 
+export interface VoiceAsrSettings {
+  model: string;
+  sample_rate: number;
+  input_audio_format: string;
+  language: string;
+  server_vad: boolean;
+  silence_duration_ms: number;
+}
+
+export interface VoiceTtsSettings {
+  model: string;
+  voice: string;
+  response_format: string;
+  sample_rate: number;
+}
+
+export interface VoiceSettingsResponse {
+  provider_id: string;
+  api_key_configured: boolean;
+  api_key_source: "env" | "saved" | "none" | string;
+  asr: VoiceAsrSettings;
+  tts: VoiceTtsSettings;
+}
+
+export interface VoiceInterviewSession {
+  voice_session_id: string;
+  interview_session_id: string;
+  status: string;
+  websocket_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type VoiceSocketMessage =
+  | { type: "control"; action: string; message?: string }
+  | { type: "subtitle"; text: string; isFinal: boolean }
+  | { type: "interview_session"; session: InterviewSession }
+  | { type: "audio_chunk"; data: string; index: number; isLast: boolean }
+  | { type: "error"; message: string };
+
 export interface ModelProvider {
   id: string;
   name: string;
@@ -179,11 +240,41 @@ export interface MatchReport {
   followup_questions: FollowUpQuestion[];
 }
 
+export interface ResumeQualitySuggestion {
+  category: string;
+  priority: string;
+  issue: string;
+  recommendation: string;
+}
+
+export interface ResumeQualityScoreDetail {
+  project_score: number;
+  skill_match_score: number;
+  content_score: number;
+  structure_score: number;
+  expression_score: number;
+}
+
+export interface ResumeQualityReport {
+  overall_score: number;
+  score_detail: ResumeQualityScoreDetail;
+  summary: string;
+  strengths: string[];
+  suggestions: ResumeQualitySuggestion[];
+}
+
+export interface CandidateSourceFile {
+  filename: string;
+  content_type?: string | null;
+}
+
 export interface CandidateReport {
   candidate_id: string;
   source_name: string;
+  source_file?: CandidateSourceFile | null;
   profile: CandidateProfile;
   match_report: MatchReport;
+  resume_quality?: ResumeQualityReport;
   parse_warnings: string[];
   extraction_facts: ExtractedFact[];
 }
@@ -195,4 +286,57 @@ export interface RunReport {
   jd_extraction_facts: ExtractedFact[];
   candidates: CandidateReport[];
   warnings: string[];
+}
+
+export type ResumeAnalyzeStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+
+export interface ResumeListItem {
+  id: number;
+  filename: string;
+  file_size: number;
+  uploaded_at: string;
+  access_count: number;
+  latest_score?: number | null;
+  last_analyzed_at?: string | null;
+  analyze_status: ResumeAnalyzeStatus;
+  analyze_error?: string | null;
+}
+
+export interface ResumeAnalysisHistoryItem {
+  analysis_id: number;
+  created_at: string;
+  overall_score: number;
+  score_detail: ResumeQualityScoreDetail;
+  summary: string;
+  strengths: string[];
+  suggestions: ResumeQualitySuggestion[];
+  original_text?: string | null;
+}
+
+export interface ResumeDetailResponse {
+  id: number;
+  filename: string;
+  file_size: number;
+  content_type?: string | null;
+  uploaded_at: string;
+  access_count: number;
+  analyze_status: ResumeAnalyzeStatus;
+  analyze_error?: string | null;
+  resume_text: string;
+  analyses: ResumeAnalysisHistoryItem[];
+}
+
+export interface ResumeUploadResponse {
+  resume: {
+    id: number;
+    filename: string;
+    analyze_status: ResumeAnalyzeStatus;
+  } | null;
+  analysis: ResumeQualityReport | null;
+  storage: {
+    file_key: string;
+    file_url: string;
+    resume_id: number;
+  };
+  duplicate?: boolean;
 }

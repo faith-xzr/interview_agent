@@ -10,6 +10,25 @@
 {{CONTEXT_JSON}}
 ```
 
+其中 `conversation_context` 是按时间顺序的历史追问回合摘要，结构示例：
+
+```json
+[
+  {
+    "turn_index": 1,
+    "question": "上一题原始问题",
+    "candidate_answer": "候选人刚才的回答",
+    "answer_summary": "对回答的简短总结",
+    "clarity_score": 72,
+    "depth_score": 68,
+    "evidence_consistency": "weak",
+    "followup_question": "对上一题给出的追问"
+  }
+]
+```
+
+`conversation_context` 主要用于保持多轮追问一致性、避免重复追问同一遗漏点。
+
 # 岗位名称上下文
 
 `jd_profile.job_title` 是本次待匹配岗位名称。生成追问时要结合候选人的回答、原题和这个岗位名称，优先追问该岗位真正需要验证的能力或缺口。

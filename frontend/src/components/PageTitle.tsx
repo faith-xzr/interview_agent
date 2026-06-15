@@ -9,7 +9,7 @@ export function PageTitle({
 }: {
   icon: LucideIcon;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   action?: ReactNode;
 }) {
   return (
@@ -18,7 +18,7 @@ export function PageTitle({
         <Icon size={32} aria-hidden="true" />
         <div>
           <h1>{title}</h1>
-          <p>{subtitle}</p>
+          {subtitle ? <p>{subtitle}</p> : null}
         </div>
       </div>
       {action ? <div className="workspace-title-action">{action}</div> : null}

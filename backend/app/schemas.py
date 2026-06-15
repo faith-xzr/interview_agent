@@ -1,5 +1,6 @@
 from datetime import datetime
 import re
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -151,6 +152,65 @@ class ScoreBreakdown(BaseModel):
     risk_deduction: int = 0
 
 
+class ResumeQualityScoreDetail(BaseModel):
+    project_score: int = 0
+    skill_match_score: int = 0
+    content_score: int = 0
+    structure_score: int = 0
+    expression_score: int = 0
+
+    @field_validator(
+        "project_score",
+        "skill_match_score",
+        "content_score",
+        "structure_score",
+        "expression_score",
+        mode="before",
+    )
+    @classmethod
+    def clamp_quality_score(cls, value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, (float, int, str)):
+            text = str(value).strip()
+            if text:
+                try:
+                    return max(0, min(100, int(round(float(text)))))
+                except ValueError:
+                    return 0
+        return 0
+
+
+class ResumeQualitySuggestion(BaseModel):
+    category: str
+    priority: str
+    issue: str
+    recommendation: str
+
+
+class ResumeQualityReport(BaseModel):
+    overall_score: int
+    score_detail: ResumeQualityScoreDetail
+    summary: str
+    original_text: Optional[str] = None
+    strengths: List[str] = Field(default_factory=list)
+    suggestions: List[ResumeQualitySuggestion] = Field(default_factory=list)
+
+    @field_validator("overall_score")
+    @classmethod
+    def clamp_overall_score(cls, value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, (float, int, str)):
+            text = str(value).strip()
+            if text:
+                try:
+                    return max(0, min(100, int(round(float(text)))))
+                except ValueError:
+                    return 0
+        return 0
+
+
 class EvidenceSnippet(BaseModel):
     source: str
     text: str
@@ -204,6 +264,21 @@ class AgentSkill(BaseModel):
     rubric_focuses: List[str] = Field(default_factory=list)
     followup_style: str = ""
     body: str = ""
+
+
+class SkillRouteResult(BaseModel):
+    position_name: str
+    skill_id: str
+    skill_name: str
+    route_result: str
+    confidence: float = 0
+    reason: str
+    source: str = "keyword"
+
+    @field_validator("confidence")
+    @classmethod
+    def clamp_route_confidence(cls, value: float) -> float:
+        return max(0.0, min(1.0, float(value)))
 
 
 class AgentPlanStep(BaseModel):
@@ -307,6 +382,15 @@ class InterviewAnswerFollowUp(BaseModel):
         return max(0, min(100, int(value)))
 
 
+class InterviewTurnInputMetadata(BaseModel):
+    source: str = "text"
+    transcript: Optional[str] = None
+    confidence: Optional[float] = None
+    locale: Optional[str] = None
+    finalized: bool = True
+    raw_text: Optional[str] = None
+
+
 class InterviewSessionQuestion(BaseModel):
     question: str
     focus: str = ""
@@ -321,6 +405,8 @@ class InterviewTurn(BaseModel):
     turn_index: int
     question: InterviewSessionQuestion
     answer: str
+    answer_source: Optional[str] = None
+    answer_metadata: Optional[InterviewTurnInputMetadata] = None
     diagnosis: InterviewAnswerFollowUp
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -364,10 +450,54 @@ class InterviewSession(BaseModel):
 class InterviewStartRequest(BaseModel):
     candidate_id: str
     mode: str = "structured"
+    skill_id: Optional[str] = None
 
 
 class InterviewTurnRequest(BaseModel):
     candidate_answer: str
+    answer_metadata: Optional[InterviewTurnInputMetadata] = None
+
+
+class VoiceAsrSettings(BaseModel):
+    model: str = "qwen3-asr-flash-realtime"
+    sample_rate: int = 16000
+    input_audio_format: str = "pcm"
+    language: str = "zh"
+    server_vad: bool = True
+    silence_duration_ms: int = 400
+
+
+class VoiceTtsSettings(BaseModel):
+    model: str = "qwen3-tts-flash-realtime"
+    voice: str = "Cherry"
+    response_format: str = "pcm"
+    sample_rate: int = 24000
+
+
+class VoiceSettingsResponse(BaseModel):
+    provider_id: str = "dashscope"
+    api_key_configured: bool = False
+    api_key_source: str = "none"
+    asr: VoiceAsrSettings = Field(default_factory=VoiceAsrSettings)
+    tts: VoiceTtsSettings = Field(default_factory=VoiceTtsSettings)
+
+
+class VoiceSettingsUpdateRequest(BaseModel):
+    asr: Optional[VoiceAsrSettings] = None
+    tts: Optional[VoiceTtsSettings] = None
+
+
+class VoiceInterviewCreateRequest(BaseModel):
+    interview_session_id: str
+
+
+class VoiceInterviewSession(BaseModel):
+    voice_session_id: str
+    interview_session_id: str
+    status: str = "active"
+    websocket_url: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class ModelProvider(BaseModel):
@@ -412,11 +542,18 @@ class MatchReport(BaseModel):
         return max(0, min(100, value))
 
 
+class CandidateSourceFile(BaseModel):
+    filename: str
+    content_type: Optional[str] = None
+
+
 class CandidateReport(BaseModel):
     candidate_id: str
     source_name: str
+    source_file: Optional[CandidateSourceFile] = None
     profile: CandidateProfile
     match_report: MatchReport
+    resume_quality: Optional[ResumeQualityReport] = None
     resume_text_hash: Optional[str] = None
     parse_warnings: List[str] = Field(default_factory=list)
     extraction_facts: List[ExtractedFact] = Field(default_factory=list)
@@ -434,3 +571,65 @@ class RunReport(BaseModel):
     agent_plan: Optional[AgentPlan] = None
     agent_state: Optional[AgentState] = None
     tool_calls: List[ToolCallRecord] = Field(default_factory=list)
+
+
+class ResumeAnalysisStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ResumeStorageInfo(BaseModel):
+    file_key: str = ""
+    file_url: str = ""
+    resume_id: int
+
+
+class ResumeFileSummary(BaseModel):
+    id: int
+    filename: str
+    analyze_status: str
+
+
+class ResumeUploadResponse(BaseModel):
+    resume: Optional[ResumeFileSummary] = None
+    analysis: Optional[ResumeQualityReport] = None
+    storage: ResumeStorageInfo
+    duplicate: bool = False
+
+
+class ResumeListItem(BaseModel):
+    id: int
+    filename: str
+    file_size: int
+    uploaded_at: datetime
+    access_count: int = 0
+    latest_score: Optional[int] = None
+    last_analyzed_at: Optional[datetime] = None
+    analyze_status: str
+    analyze_error: Optional[str] = None
+
+
+class ResumeAnalysisHistoryItem(BaseModel):
+    analysis_id: int
+    created_at: datetime
+    overall_score: int
+    score_detail: ResumeQualityScoreDetail
+    summary: str
+    strengths: List[str] = Field(default_factory=list)
+    suggestions: List[ResumeQualitySuggestion] = Field(default_factory=list)
+    original_text: Optional[str] = None
+
+
+class ResumeDetailResponse(BaseModel):
+    id: int
+    filename: str
+    file_size: int
+    content_type: Optional[str]
+    uploaded_at: datetime
+    access_count: int = 0
+    analyze_status: str
+    analyze_error: Optional[str] = None
+    resume_text: str
+    analyses: List[ResumeAnalysisHistoryItem] = Field(default_factory=list)

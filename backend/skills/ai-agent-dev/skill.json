@@ -2,7 +2,7 @@
   "id": "ai-agent-dev",
   "name": "AI Agent 开发",
   "description": "用于 AI Agent 开发岗位面试出题；覆盖 Agent 架构、LLM 调用、工具集成、MCP 协议、RAG、上下文工程与多 Agent 协作。",
-  "keywords": ["AI Agent 开发", "Agent Loop", "MCP 协议", "上下文工程", "多 Agent 协作"],
+  "keywords": ["AI Agent 开发", "AI Agent", "Agent", "Prompt", "工作流", "自动化", "业务流程", "Agent Loop", "MCP 协议", "上下文工程", "多 Agent 协作"],
   "categories": [
     {"key": "AGENT_BASIS", "label": "Agent 基础", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},
     {"key": "LLM_CALLING", "label": "LLM 调用", "priority": "core", "weight": 1.0, "ref": "ai-agent-dev.md"},

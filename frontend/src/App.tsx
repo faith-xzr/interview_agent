@@ -12,6 +12,8 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createRun,
   deleteInterviewSession,
+  deleteRunCandidate,
+  deleteAllRuns,
   listInterviewSessions,
   listRuns
 } from "./api";
@@ -28,6 +30,36 @@ import "./styles.css";
 
 type WorkspaceView = "resumes" | "interview" | "records" | "settings";
 
+const ROUTES: Record<WorkspaceView, string> = {
+  resumes: "/history",
+  interview: "/interview-hub",
+  records: "/interviews",
+  settings: "/settings"
+};
+
+function normalizePathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
+  }
+  return pathname;
+}
+
+function workspaceFromPath(pathname: string): WorkspaceView {
+  switch (normalizePathname(pathname)) {
+    case "/":
+    case "/history":
+      return "resumes";
+    case "/interview-hub":
+      return "interview";
+    case "/interviews":
+      return "records";
+    case "/settings":
+      return "settings";
+    default:
+      return "resumes";
+  }
+}
+
 const WORKSPACE_GROUPS: Array<{
   title: string;
   items: Array<{
@@ -40,7 +72,7 @@ const WORKSPACE_GROUPS: Array<{
   {
     title: "面试准备",
     items: [
-      { id: "resumes", label: "简历管理", description: "按 JD 分组分析", icon: FileStack },
+      { id: "resumes", label: "简历管理", description: "按 JD 分组给简历打分", icon: FileStack },
       { id: "interview", label: "模拟面试", description: "配置面试练习", icon: Sparkles },
       { id: "records", label: "面试记录", description: "管理面试历史", icon: Users }
     ]
@@ -54,7 +86,9 @@ const WORKSPACE_GROUPS: Array<{
 ];
 
 export default function App() {
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>("resumes");
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>(() =>
+    workspaceFromPath(window.location.pathname)
+  );
   const [jdText, setJdText] = useState("");
   const [resumeText, setResumeText] = useState("");
   const [jdFile, setJdFile] = useState<File | null>(null);
@@ -75,7 +109,10 @@ export default function App() {
     let cancelled = false;
     async function loadWorkspaceState() {
       try {
-        const [savedRuns, savedSessions] = await Promise.all([listRuns(), listInterviewSessions()]);
+        const [savedRuns, savedSessions] = await Promise.all([
+          listRuns(),
+          listInterviewSessions()
+        ]);
         if (cancelled) return;
         setRuns(savedRuns);
         setInterviewSessions(savedSessions);
@@ -95,6 +132,25 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const syncWorkspaceFromPath = () => {
+      setActiveWorkspace(workspaceFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", syncWorkspaceFromPath);
+    syncWorkspaceFromPath();
+    return () => {
+      window.removeEventListener("popstate", syncWorkspaceFromPath);
+    };
+  }, []);
+
+  const navigateWorkspace = (workspace: WorkspaceView) => {
+    const nextPath = ROUTES[workspace];
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
+    }
+    setActiveWorkspace(workspace);
+  };
 
   const selectedRun = useMemo(() => {
     if (!runs.length) return report;
@@ -121,7 +177,7 @@ export default function App() {
       setRuns((current) => [nextReport, ...current.filter((item) => item.run_id !== nextReport.run_id)]);
       setSelectedRunId(nextReport.run_id);
       setSelectedId(nextReport.candidates[0]?.candidate_id ?? null);
-      setActiveWorkspace("resumes");
+      navigateWorkspace("resumes");
       setActiveView("overview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "请求失败，请检查输入后重试。");
@@ -157,9 +213,62 @@ export default function App() {
     }
   }
 
+  async function handleDeleteResume(runId: string, candidateId: string) {
+    setError(null);
+    try {
+      await deleteRunCandidate(runId, candidateId);
+      const nextRuns = await listRuns();
+      const nextSessions = await listInterviewSessions();
+      setRuns(nextRuns);
+      setInterviewSessions(nextSessions);
+
+      const nextSelectedRun = nextRuns.find((item) => item.run_id === selectedRunId) ?? null;
+      if (!nextRuns.length) {
+        setReport(null);
+        setSelectedRunId(null);
+        setSelectedId(null);
+        return;
+      }
+
+      const finalSelectedRunId = nextSelectedRun ? nextSelectedRun.run_id : nextRuns[0].run_id;
+      const finalSelectedRun = nextRuns.find((item) => item.run_id === finalSelectedRunId) ?? nextRuns[0];
+      setSelectedRunId(finalSelectedRun.run_id);
+      setReport(finalSelectedRun);
+      setSelectedId((current) => {
+        const candidates = finalSelectedRun.candidates;
+        if (candidates.some((item) => item.candidate_id === current)) {
+          return current;
+        }
+        return candidates[0]?.candidate_id ?? null;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "候选人删除失败。");
+    }
+  }
+
+  async function handleDeleteAllRuns() {
+    setError(null);
+    const confirmed = window.confirm("确定清空全部历史上传吗？该操作不可恢复。");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await deleteAllRuns();
+      const nextRuns = await listRuns();
+      const nextSessions = await listInterviewSessions();
+      setRuns(nextRuns);
+      setInterviewSessions(nextSessions);
+      setReport(null);
+      setSelectedRunId(null);
+      setSelectedId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "全部历史上传清空失败。")
+    }
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar activeWorkspace={activeWorkspace} onChange={setActiveWorkspace} />
+      <Sidebar activeWorkspace={activeWorkspace} onChange={navigateWorkspace} />
       <main className="workspace-main">
         {activeWorkspace === "resumes" ? (
           <ResumeManagementWorkspace
@@ -186,6 +295,8 @@ export default function App() {
             onSelectCandidate={setSelectedId}
             onSelectRun={handleSelectRun}
             onSubmit={handleSubmit}
+            onDeleteCandidate={handleDeleteResume}
+            onDeleteAllRuns={handleDeleteAllRuns}
           />
         ) : null}
 

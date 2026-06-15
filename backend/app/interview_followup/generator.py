@@ -1,9 +1,15 @@
 import json
 from pathlib import Path
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from app.schemas import CandidateReport, InterviewAnswerFollowUp, InterviewQuestion, JDProfile
+from app.schemas import (
+    CandidateReport,
+    InterviewAnswerFollowUp,
+    InterviewQuestion,
+    InterviewTurn,
+    JDProfile,
+)
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "interview_followup" / "answer_diagnosis.md"
@@ -36,10 +42,19 @@ def generate_interview_answer_followup_for_question(
     question: InterviewQuestion,
     question_index: int,
     candidate_answer: str,
+    conversation_turns: Optional[List[InterviewTurn]] = None,
 ) -> InterviewAnswerFollowUp:
     answer = candidate_answer.strip()
     if getattr(llm, "available", False):
-        payload = _call_llm(llm, jd, candidate, question, question_index, answer)
+        payload = _call_llm(
+            llm,
+            jd,
+            candidate,
+            question,
+            question_index,
+            answer,
+            conversation_turns=conversation_turns,
+        )
         parsed = _parse_llm_payload(payload, question, question_index, answer)
         if parsed is not None:
             return parsed
@@ -53,6 +68,7 @@ def _call_llm(
     question: InterviewQuestion,
     question_index: int,
     answer: str,
+    conversation_turns: Optional[List[InterviewTurn]] = None,
 ) -> Optional[Dict[str, Any]]:
     context = {
         "jd_profile": jd.model_dump(mode="json"),
@@ -60,6 +76,7 @@ def _call_llm(
         "match_reasons": candidate.match_report.match_reasons,
         "gap_reasons": candidate.match_report.gap_reasons,
         "evidence_snippets": [item.model_dump(mode="json") for item in candidate.match_report.evidence_snippets[:5]],
+        "conversation_context": _build_conversation_context(conversation_turns),
         "question_index": question_index,
         "interview_question": question.model_dump(mode="json"),
         "candidate_answer": answer,
@@ -73,6 +90,27 @@ def _call_llm(
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _build_conversation_context(
+    conversation_turns: Optional[List[InterviewTurn]],
+) -> List[Dict[str, Any]]:
+    if not conversation_turns:
+        return []
+    recent_turns = conversation_turns[-4:]
+    return [
+        {
+            "turn_index": turn.turn_index,
+            "question": turn.question.question,
+            "candidate_answer": turn.answer,
+            "answer_summary": turn.diagnosis.answer_summary,
+            "clarity_score": turn.diagnosis.clarity_score,
+            "depth_score": turn.diagnosis.depth_score,
+            "evidence_consistency": turn.diagnosis.evidence_consistency,
+            "followup_question": turn.diagnosis.followup_question,
+        }
+        for turn in recent_turns
+    ]
 
 
 def _parse_llm_payload(

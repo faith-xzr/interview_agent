@@ -41,7 +41,8 @@ def test_skill_repository_loads_default_skills_and_matches_agent_jd():
 
     skills = repository.list_skills()
     skill_ids = {skill.id for skill in skills}
-    assert "generic-interview" in skill_ids
+    assert "custom-jd" in skill_ids
+    assert "generic-interview" not in skill_ids
     assert "ai-agent-engineer" in skill_ids
     assert "ai-agent-dev" in skill_ids
     assert "java-backend" in skill_ids
@@ -60,6 +61,21 @@ def test_skill_repository_loads_default_skills_and_matches_agent_jd():
     selected = select_skills_for_jd(jd, repository)
 
     assert [skill.id for skill in selected] == ["ai-agent-engineer"]
+
+
+def test_unmatched_jd_uses_custom_jd_as_single_fallback_skill():
+    repository = SkillRepository.default()
+    jd = JDProfile(
+        job_title="新媒体运营",
+        responsibilities=["负责内容选题、图文发布和账号复盘"],
+        required_skills=["小红书", "抖音", "内容策划"],
+    )
+
+    selected = select_skills_for_jd(jd, repository)
+    skill = select_skill_for_direction("", repository, jd)
+
+    assert [item.id for item in selected] == ["custom-jd"]
+    assert skill.id == "custom-jd"
 
 
 def test_interview_session_uses_direction_skill_flow():

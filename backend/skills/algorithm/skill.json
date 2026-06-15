@@ -2,7 +2,7 @@
   "id": "algorithm",
   "name": "算法与数据结构",
   "description": "用于算法面试出题；重点评估复杂度分析、边界处理、优化能力和真实理解。",
-  "keywords": ["算法", "数据结构", "复杂度", "动态规划", "二叉树", "图", "堆", "哈希", "LeetCode"],
+  "keywords": ["算法", "数据结构", "复杂度", "动态规划", "二叉树", "图论", "图算法", "堆", "哈希", "LeetCode"],
   "categories": [
     {"key": "ARRAY_LINKEDLIST", "label": "数组/链表", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},
     {"key": "HASH_HEAP_QUEUE", "label": "哈希/堆/栈/队列", "priority": "core", "weight": 1.0, "ref": "algorithm-data-structures.md"},

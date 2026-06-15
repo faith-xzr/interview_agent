@@ -89,8 +89,8 @@ def select_skills_for_jd(jd_profile: JDProfile, repository: SkillRepository) -> 
     if scored:
         scored.sort(key=lambda item: (-item[0], item[1].id))
         return [scored[0][1]]
-    generic = repository.get_optional("generic-interview")
-    return [generic] if generic is not None else [skills[0]]
+    custom = repository.get_optional("custom-jd")
+    return [custom] if custom is not None else [skills[0]]
 
 
 def select_skill_for_direction(
@@ -110,9 +110,9 @@ def select_skill_for_direction(
         if selected:
             return selected[0]
 
-    generic = repository.get_optional("generic-interview")
-    if generic is not None:
-        return generic
+    custom = repository.get_optional("custom-jd")
+    if custom is not None:
+        return custom
 
     skills = repository.list_skills()
     if skills:
